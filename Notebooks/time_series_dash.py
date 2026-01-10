@@ -10,6 +10,8 @@ import io, base64
 import plotly.io as pio
 pio.templates.default = "plotly"
 import matplotlib.pyplot as plt
+import plotly.colors as pc
+
 # Load your services CSV
 services = pd.read_csv(r"../Hospital Beds Management/services_weekly.csv")
 df_HBM_patients        = pd.read_csv('../Hospital Beds Management/patients.csv', delimiter=',', low_memory=False)
@@ -30,9 +32,16 @@ event_types = [e for e in event_types if e != 'none']
 event_colors = px.colors.qualitative.Pastel[:len(event_types)]
 event_color_map = dict(zip(event_types, event_colors))
 
+SERVICE_COLORS = dict(
+    zip(services_list, pc.qualitative.Set1)
+)
 
-
-
+metric_dash_map = {
+    'patient_satisfaction': 'solid',
+    'staff_morale': 'dash',
+    'available_beds': 'dot',
+    'admits/requests': 'dashdot'
+}
 
 ## calculate staff to patient ratio
 weeks = df_HBM_staff_schedule['week'].unique().tolist()
@@ -108,10 +117,6 @@ entity_options = avg_options + staff_options
 radar_norm_cols = [c + "_norm" for c in radar_cols]
 
 
-
-
-
-
 # Dash app
 app = Dash(__name__)
 
@@ -123,7 +128,9 @@ app.layout = html.Div([
         dcc.Dropdown(
             id='service-dropdown',
             options=[{'label': s, 'value': s} for s in services_list],
-            value=services_list[0]
+            value=[services_list[0]],
+            multi=True,
+            clearable=False
         )
     ], style={'width': '45%', 'display': 'inline-block'}),
 
@@ -133,7 +140,8 @@ app.layout = html.Div([
             id='metric-dropdown',
             options=[{'label': m, 'value': m} for m in metrics],
             value=[metrics[0]],
-            multi=True  # allow multiple metrics
+            multi=True,  # allow multiple metrics
+            clearable=False
         )
     ], style={'width': '45%', 'display': 'inline-block', 'marginLeft': '5%'}),
 
@@ -179,52 +187,64 @@ html.Div(id="radar-info"),
 )
 
 def update_plot(service_selected, metrics_selected):
-    df_service = services[services['service'] == service_selected]
-
+    
     fig = go.Figure()
+    colors_used = []
+    fig_scatter = go.Figure() 
+    if len(service_selected)==0 or len(metrics_selected)==0:
+        fig.update_layout(
+            title="Please select at least one service and one metric"
+        )
+        return fig_scatter, fig
+    
+    for s in service_selected:
+        df_service = services[services['service'] == s]
 
-    # Add one line per selected metric
-    for metric in metrics_selected:
-        fig.add_trace(go.Scatter(
-            x=df_service['week'],
-            y=df_service[metric],
-            mode='lines+markers',
-            name=metric
-        ))
+        # Add one line per selected metric
+        for metric in metrics_selected:
+            fig.add_trace(go.Scatter(
+                x=df_service['week'],
+                y=df_service[metric],
+                mode='lines+markers',
+                name=f"{s} — {metric}",
+                line=dict(color=SERVICE_COLORS[s],dash=metric_dash_map.get(metric, 'solid')),
+                marker=dict(color=SERVICE_COLORS[s])
+            ))
 
-    # Highlight events as shaded rectangles
-    for event in event_types:
-        event_weeks = df_service[df_service['event'] == event]['week'].tolist()
-        for week in event_weeks:
-            fig.add_vrect(
-                x0=week-0.5, x1=week+0.5,
-                fillcolor=event_color_map[event],
-                opacity=0.3,
-                layer="below",
-                line_width=0
-            )
-        # Add invisible scatter for legend
-        fig.add_trace(go.Scatter(
-            x=[None], y=[None],
-            mode='markers',
-            marker=dict(size=10, color=event_color_map[event]),
-            name=event
-        ))
+        # Highlight events as shaded rectangles
+        for event in event_types:
+            event_weeks = df_service[df_service['event'] == event]['week'].tolist()
+            for week in event_weeks:
+                fig.add_vrect(
+                    x0=week-0.5, x1=week+0.5,
+                    fillcolor=event_color_map[event],
+                    opacity=0.3,
+                    layer="below",
+                    line_width=0
+                )
+            # Add invisible scatter for legend
+            fig.add_trace(go.Scatter(
+                x=[None], y=[None],
+                mode='markers',
+                marker=dict(size=10, color=event_color_map[event]),
+                name=event
+            ))
 
-    fig.update_layout(
-        title=f"Metrics over time for {service_selected}",
-        xaxis_title="Week",
-        yaxis_title="Value",
-        legend_title="Metric"
-    )
+        fig.update_layout(
+            title=f"Metrics over time for {service_selected}",
+            xaxis_title="Week",
+            yaxis_title="Value",
+            legend_title="Metric"
+        )
 
-     # ---- Scatter  ----
+        # ---- Scatter  ----
 
     fig_scatter = px.scatter(
-        merged,
+        merged[merged['service'].isin(service_selected)],
         x='staff_to_patient_ratio',
         y='patient_satisfaction',
         color='service',
+        color_discrete_map={s: SERVICE_COLORS[s]},
         size='staff_coverage',
         hover_data=['week', 'staff_coverage', 'patients_admitted', 'available_beds'],
         size_max=12,
