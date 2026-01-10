@@ -11,6 +11,7 @@ import plotly.io as pio
 pio.templates.default = "plotly"
 import matplotlib.pyplot as plt
 import plotly.colors as pc
+from plotly.subplots import make_subplots
 
 # Load your services CSV
 services = pd.read_csv(r"../Hospital Beds Management/services_weekly.csv")
@@ -33,7 +34,7 @@ event_colors = px.colors.qualitative.Pastel[:len(event_types)]
 event_color_map = dict(zip(event_types, event_colors))
 
 SERVICE_COLORS = dict(
-    zip(services_list, pc.qualitative.Set1)
+    zip(services_list, pc.qualitative.Set2)
 )
 
 metric_dash_map = {
@@ -145,8 +146,12 @@ app.layout = html.Div([
         )
     ], style={'width': '45%', 'display': 'inline-block', 'marginLeft': '5%'}),
 
-    dcc.Graph(id='time-series-plot'),
-    dcc.Graph(id='scatterplt'),
+    dcc.Graph(id='time-series-plot',
+        config={'displayModeBar': True},
+        clear_on_unhover=True),
+    dcc.Graph(id='scatterplt',
+        config={'displayModeBar': True},
+        clear_on_unhover=True),
 
      html.H2("Radar comparison"),
 
@@ -196,10 +201,36 @@ def update_plot(service_selected, metrics_selected):
             title="Please select at least one service and one metric"
         )
         return fig_scatter, fig
-    
+    if len(service_selected)==2:
+        fig = make_subplots(
+        rows=1, cols=2,
+        specs=[[{}, {}]])
+        positions = [[1,1],[1,2]]
+    elif len(service_selected)==3:
+        fig = make_subplots(
+        rows=2, cols=2,
+        specs=[[{}, {}],
+        [{"colspan": 2}, None]])
+        positions = [[1,1],[1,2],[2,1]]
+    elif len(service_selected)==4:
+        fig = make_subplots(
+        rows=2, cols=2,
+        specs=[[{}, {}],
+        [{}, {}]])
+        positions = [[1,1],[1,2],[2,1],[2,2]]
+    else:
+        fig = make_subplots(
+        rows=1, cols=1,
+        specs=[[{}]])
+        positions = [[1,1]]
+
+    i=0
     for s in service_selected:
         df_service = services[services['service'] == s]
 
+        p = positions[i]
+        i+=1
+        
         # Add one line per selected metric
         for metric in metrics_selected:
             fig.add_trace(go.Scatter(
@@ -209,7 +240,8 @@ def update_plot(service_selected, metrics_selected):
                 name=f"{s} — {metric}",
                 line=dict(color=SERVICE_COLORS[s],dash=metric_dash_map.get(metric, 'solid')),
                 marker=dict(color=SERVICE_COLORS[s])
-            ))
+            ),row=p[0],
+            col=p[1])
 
         # Highlight events as shaded rectangles
         for event in event_types:
@@ -220,7 +252,9 @@ def update_plot(service_selected, metrics_selected):
                     fillcolor=event_color_map[event],
                     opacity=0.3,
                     layer="below",
-                    line_width=0
+                    line_width=0,
+                    row=p[0],
+                    col=p[1]
                 )
             # Add invisible scatter for legend
             fig.add_trace(go.Scatter(
@@ -228,7 +262,7 @@ def update_plot(service_selected, metrics_selected):
                 mode='markers',
                 marker=dict(size=10, color=event_color_map[event]),
                 name=event
-            ))
+            ),row=p[0],col=p[1])
 
         fig.update_layout(
             title=f"Metrics over time for {service_selected}",
@@ -244,7 +278,7 @@ def update_plot(service_selected, metrics_selected):
         x='staff_to_patient_ratio',
         y='patient_satisfaction',
         color='service',
-        color_discrete_map={s: SERVICE_COLORS[s]},
+        color_discrete_map=SERVICE_COLORS,
         size='staff_coverage',
         hover_data=['week', 'staff_coverage', 'patients_admitted', 'available_beds'],
         size_max=12,
@@ -254,7 +288,9 @@ def update_plot(service_selected, metrics_selected):
         },
         title=f'Staffing vs Patient Satisfaction — {service_selected}'
     )
-
+    fig.update_xaxes(matches='x')
+    fig.update_yaxes(matches='y')
+    fig.update_layout(dragmode='pan')
     return fig_scatter, fig
 
 
