@@ -36,7 +36,9 @@ event_color_map = dict(zip(event_types, event_colors))
 SERVICE_COLORS = dict(
     zip(services_list, pc.qualitative.Set2)
 )
-
+SERVICE_COLORS_Selected = dict(
+    zip(metrics, pc.qualitative.Set1)
+)
 metric_dash_map = {
     'patient_satisfaction': 'solid',
     'staff_morale': 'dash',
@@ -67,11 +69,7 @@ merged['staff_to_patient_ratio'] = (
 
 df_HBM_staff['#weeks worked'] = df_HBM_staff_schedule.groupby('staff_id')['present'].transform('sum')
 
-
-
 ## values for radar plot
-
-
 df_staff_serv = df_HBM_staff_schedule.merge(
     df_HBM_services_weekly,
     on=['service', 'week'],
@@ -194,7 +192,6 @@ html.Div(id="radar-info"),
 def update_plot(service_selected, metrics_selected):
     
     fig = go.Figure()
-    colors_used = []
     fig_scatter = go.Figure() 
     if len(service_selected)==0 or len(metrics_selected)==0:
         fig.update_layout(
@@ -234,6 +231,7 @@ def update_plot(service_selected, metrics_selected):
         
         if len(service_selected) ==i:
             show = True
+            
         # Add one line per selected metric
         for metric in metrics_selected:
             fig.add_trace(go.Scatter(
@@ -243,7 +241,15 @@ def update_plot(service_selected, metrics_selected):
                 customdata=df_service['week'],
                 name=f"{s} — {metric}",
                 line=dict(color=SERVICE_COLORS[s],dash=metric_dash_map.get(metric, 'solid')),
-                marker=dict(color=SERVICE_COLORS[s])
+                marker=dict(color=SERVICE_COLORS[s]),
+                selected=dict(
+                    marker=dict(opacity=1,color=SERVICE_COLORS_Selected[metric])
+                    ),
+                unselected=dict(
+                    marker=dict(opacity=0.15)
+                    ),
+                    
+                
             ),row=p[0],
             col=p[1])
 
