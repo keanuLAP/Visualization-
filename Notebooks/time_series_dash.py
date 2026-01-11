@@ -225,18 +225,22 @@ def update_plot(service_selected, metrics_selected):
         positions = [[1,1]]
 
     i=0
+    show = False
     for s in service_selected:
         df_service = services[services['service'] == s]
 
         p = positions[i]
         i+=1
         
+        if len(service_selected) ==i:
+            show = True
         # Add one line per selected metric
         for metric in metrics_selected:
             fig.add_trace(go.Scatter(
                 x=df_service['week'],
                 y=df_service[metric],
                 mode='lines+markers',
+                customdata=df_service['week'],
                 name=f"{s} — {metric}",
                 line=dict(color=SERVICE_COLORS[s],dash=metric_dash_map.get(metric, 'solid')),
                 marker=dict(color=SERVICE_COLORS[s])
@@ -261,22 +265,23 @@ def update_plot(service_selected, metrics_selected):
                 x=[None], y=[None],
                 mode='markers',
                 marker=dict(size=10, color=event_color_map[event]),
-                name=event
+                name=event,
+                showlegend=show
             ),row=p[0],col=p[1])
 
         fig.update_layout(
-            title=f"Metrics over time for {service_selected}",
+            title=f"Metrics over time per service",
             xaxis_title="Week",
             yaxis_title="Value",
             legend_title="Metric"
         )
 
-        # ---- Scatter  ----
-
+    # Scatter plot satisfaction vs patient-staff ratio
     fig_scatter = px.scatter(
         merged[merged['service'].isin(service_selected)],
         x='staff_to_patient_ratio',
         y='patient_satisfaction',
+        custom_data=['week', 'service'],
         color='service',
         color_discrete_map=SERVICE_COLORS,
         size='staff_coverage',
@@ -286,22 +291,19 @@ def update_plot(service_selected, metrics_selected):
             'staff_to_patient_ratio': 'Staff / patient ratio',
             'patient_satisfaction': 'Patient satisfaction',
         },
-        title=f'Staffing vs Patient Satisfaction — {service_selected}'
+        title=f'Staffing vs Patient Satisfaction'
     )
     fig.update_xaxes(matches='x')
     fig.update_yaxes(matches='y')
-    fig.update_layout(dragmode='pan')
+    fig.update_layout(dragmode='select', clickmode='event+select')
+    fig_scatter.update_layout(dragmode='select', clickmode='event+select')
     return fig_scatter, fig
-
-
 
 @app.callback(
     Output('radarplt', 'children'),
     Output('radar-info', 'children'),
     Input('radar-a', 'value'),
     Input('radar-b', 'value'),)
-
-
 
 
 def update_radar(a_val, b_val):
