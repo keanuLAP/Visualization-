@@ -14,15 +14,54 @@ import plotly.colors as pc
 from plotly.subplots import make_subplots
 
 # Load your services CSV
-services = pd.read_csv(r"../Hospital Beds Management/services_weekly.csv")
-df_HBM_patients        = pd.read_csv('../Hospital Beds Management/patients.csv', delimiter=',', low_memory=False)
-df_HBM_staff           = pd.read_csv('../Hospital Beds Management/staff.csv', delimiter=',', low_memory=False)
-df_HBM_staff_schedule  = pd.read_csv('../Hospital Beds Management/staff_schedule.csv', delimiter=',', low_memory=False)
-df_HBM_services_weekly = pd.read_csv('../Hospital Beds Management/services_weekly.csv', delimiter=',', low_memory=False)
+services = pd.read_csv(r"Hospital Beds Management/services_weekly.csv")
+df_HBM_patients        = pd.read_csv('Hospital Beds Management/patients.csv', delimiter=',', low_memory=False)
+df_HBM_staff           = pd.read_csv('Hospital Beds Management/staff.csv', delimiter=',', low_memory=False)
+df_HBM_staff_schedule  = pd.read_csv('Hospital Beds Management/staff_schedule.csv', delimiter=',', low_memory=False)
+df_HBM_services_weekly = pd.read_csv('Hospital Beds Management/services_weekly.csv', delimiter=',', low_memory=False)
 
 
 # Compute derived metrics
 services['admits/requests'] = services['patients_admitted'] / services['patients_request']
+
+# Categorize patient satisfaction and staff morale
+def categorize_satisfaction(score):
+    if score <= 20:
+        return 'Very Low'
+    elif score <= 40:
+        return 'Low'
+    elif score <= 60:
+        return 'Medium'
+    elif score <= 80:
+        return 'High'
+    else:
+        return 'Very High'
+
+services['patient_sat_cat'] = services['patient_satisfaction'].apply(categorize_satisfaction)
+services['staff_morale_cat'] = services['staff_morale'].apply(categorize_satisfaction)
+
+# Define categories
+patient_sat_cats = ['Very Low', 'Low', 'Medium', 'High', 'Very High']
+depts = services['service'].unique().tolist()
+events = services['event'].unique().tolist()
+staff_morale_cats = patient_sat_cats
+
+# Node labels
+node_labels = patient_sat_cats + depts + events + staff_morale_cats
+
+# Indices
+num_sat = len(patient_sat_cats)
+num_dept = len(depts)
+num_event = len(events)
+
+# Define color map for patient satisfaction categories
+color_map = {
+    'Very Low': 'red',
+    'Low': 'yellow',
+    'Medium': 'gray',
+    'High': 'lightgreen',
+    'Very High': 'darkgreen'
+}
 
 # Available metrics
 metrics = ['patient_satisfaction', 'staff_morale', 'available_beds', 'admits/requests']
@@ -45,6 +84,90 @@ metric_dash_map = {
     'available_beds': 'dot',
     'admits/requests': 'dashdot'
 }
+
+# Group by full path to create links per patient satisfaction category
+grouped = services.groupby(['patient_sat_cat', 'service', 'event', 'staff_morale_cat']).size().reset_index(name='count')
+
+# Links
+links = []
+for _, row in grouped.iterrows():
+    sat = row['patient_sat_cat']
+    dept = row['service']
+    event = row['event']
+    morale = row['staff_morale_cat']
+    count = row['count']
+    color = color_map[sat]
+    
+    sat_idx = patient_sat_cats.index(sat)
+    dept_idx = num_sat + depts.index(dept)
+    event_idx = num_sat + num_dept + events.index(event)
+    morale_idx = num_sat + num_dept + num_event + staff_morale_cats.index(morale)
+    
+    links.append({'source': sat_idx, 'target': dept_idx, 'value': count, 'color': color})
+    links.append({'source': dept_idx, 'target': event_idx, 'value': count, 'color': color})
+    links.append({'source': event_idx, 'target': morale_idx, 'value': count, 'color': color})
+
+# Node colors: patient satisfaction categories, departments, events with their respective colors, others neutral
+node_colors = []
+for label in node_labels:
+    if label in color_map:
+        node_colors.append(color_map[label])
+    elif label in SERVICE_COLORS:
+        node_colors.append(SERVICE_COLORS[label])
+    elif label in event_color_map:
+        node_colors.append(event_color_map[label])
+    else:
+        node_colors.append('lightgray')
+
+# Link colors
+link_colors = [l['color'] for l in links]
+
+# Function to add opacity to colors
+def add_opacity(color, opacity):
+    color_map_rgb = {
+        'red': '255,0,0',
+        'yellow': '255,255,0',
+        'gray': '128,128,128',
+        'lightgray': '211,211,211',
+        'lightgreen': '144,238,144',
+        'darkgreen': '0,100,0',
+        'lightblue': '173,216,230',
+        'blue': '0,0,255',
+        'purple': '128,0,128'
+    }
+    if color in color_map_rgb:
+        return f'rgba({color_map_rgb[color]},{opacity})'
+    elif color.startswith('rgba'):
+        # If already rgba, update alpha
+        parts = color.strip('rgba()').split(',')
+        parts[-1] = str(opacity)
+        return f'rgba({",".join(parts)})'
+    elif color.startswith('rgb'):
+        # Convert rgb to rgba
+        rgb_part = color.strip('rgb()')
+        return f'rgba({rgb_part},{opacity})'
+    else:
+        return f'rgba(128,128,128,{opacity})'  # default gray
+
+# Initial Sankey figure with default opacity
+initial_opacity = 0.5
+link_colors_opacity = [add_opacity(c, initial_opacity) for c in link_colors]
+fig_sankey = go.Figure(go.Sankey(
+    node=dict(
+        pad=15,
+        thickness=20,
+        line=dict(color="black", width=0.5),
+        label=node_labels,
+        color=node_colors
+    ),
+    link=dict(
+        source=[l['source'] for l in links],
+        target=[l['target'] for l in links],
+        value=[l['value'] for l in links],
+        color=link_colors_opacity
+    )
+))
+fig_sankey.update_layout(title_text="Patient Satisfaction Flow", font_size=10)
 
 ## calculate staff to patient ratio
 weeks = df_HBM_staff_schedule['week'].unique().tolist()
@@ -179,6 +302,22 @@ html.Div([
 
 html.Div(id="radarplt"),
 html.Div(id="radar-info"),
+
+html.H2("Patient Satisfaction Flow"),
+
+html.Div([
+    html.Label("Select Patient Satisfaction Category:"),
+    dcc.Dropdown(
+        id='sankey-category-dropdown',
+        options=[{'label': 'All', 'value': 'All'}] + [{'label': cat, 'value': cat} for cat in patient_sat_cats],
+        value='All',
+        clearable=False
+    )
+], style={'width': '45%', 'display': 'inline-block'}),
+
+dcc.Graph(id='sankey'),
+html.P("Link Opacity"),
+dcc.Slider(id='sankey-opacity', min=0, max=1, value=0.5, step=0.1),
 
 ])
 
@@ -380,6 +519,67 @@ def update_radar(a_val, b_val):
 
     return img, info_box
 
+@app.callback(
+    Output("sankey", "figure"),
+    Input("sankey-opacity", "value"),
+    Input("sankey-category-dropdown", "value")
+)
+def update_sankey(opacity, selected_cat):
+    filtered_grouped = grouped  # Always use all data
+    
+    links = []
+    for _, row in filtered_grouped.iterrows():
+        sat = row['patient_sat_cat']
+        dept = row['service']
+        event = row['event']
+        morale = row['staff_morale_cat']
+        count = row['count']
+        
+        # Colors based on the segment being passed through
+        color_sat_to_dept = color_map[sat]  # From sat category
+        color_dept_to_event = SERVICE_COLORS.get(dept, 'blue')  # Through dept
+        color_event_to_morale = event_color_map.get(event, 'gray')  # Default to gray for 'none'
+        
+        if selected_cat != 'All' and sat != selected_cat:
+            color_sat_to_dept = 'lightgray'
+            color_dept_to_event = 'lightgray'
+            color_event_to_morale = 'lightgray'
+        
+        sat_idx = patient_sat_cats.index(sat)
+        dept_idx = num_sat + depts.index(dept)
+        event_idx = num_sat + num_dept + events.index(event)
+        morale_idx = num_sat + num_dept + num_event + staff_morale_cats.index(morale)
+        
+        links.append({'source': sat_idx, 'target': dept_idx, 'value': count, 'color': color_sat_to_dept, 'sat': sat})
+        links.append({'source': dept_idx, 'target': event_idx, 'value': count, 'color': color_dept_to_event, 'sat': sat})
+        links.append({'source': event_idx, 'target': morale_idx, 'value': count, 'color': color_event_to_morale, 'sat': sat})
+    
+    link_colors = [l['color'] for l in links]
+    link_customdata = [l['sat'] for l in links]  # Patient satisfaction category for each link
+    link_colors_opacity = [add_opacity(c, opacity) for c in link_colors]
+    title_text = f"Patient Satisfaction Flow"
+    if selected_cat != 'All':
+        title_text += f" - Highlighting: {selected_cat}"
+    
+    fig = go.Figure(go.Sankey(
+        node=dict(
+            pad=15,
+            thickness=20,
+            line=dict(color="black", width=0.5),
+            label=node_labels,
+            color=node_colors
+        ),
+        link=dict(
+            source=[l['source'] for l in links],
+            target=[l['target'] for l in links],
+            value=[l['value'] for l in links],
+            color=link_colors_opacity,
+            customdata=link_customdata,
+            hovertemplate='Source: %{source.label}<br>Target: %{target.label}<br>Value: %{value}<br>Patient Satisfaction: %{customdata}<extra></extra>'
+        )
+    ))
+    fig.update_layout(title_text=title_text, font_size=10)
+    return fig
 
 if __name__ == '__main__':
     webbrowser.open("http://127.0.0.1:8050/")
