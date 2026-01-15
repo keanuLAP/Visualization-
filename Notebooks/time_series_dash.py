@@ -121,110 +121,157 @@ app = Dash(__name__)
 app.layout = html.Div([
     html.Div([  # page
 
-        html.Div([
-            html.H1("Hospital Metrics Over Time", className="h1"),
-            html.Div("Hover for details • Select to compare • Scroll to zoom", className="sub"),
-        ], className="header"),
+    html.Div([
+        html.H1("Hospital Metrics Over Time", className="h1"),
+        html.Div("Hover for details • Select to compare • Scroll to zoom", className="sub"),
+    ], className="header"),
 
-        # Controls card
-        html.Div([
-            html.Div([
-                html.Div([
-                    html.Label("Select Service:", className="label"),
-                    dcc.Dropdown(
-                        id='service-dropdown',
-                        options=[{'label': s, 'value': s} for s in services_list],
-                        value=[services_list[0]],
-                        multi=True,
-                        clearable=False,
-                        className="dropdown",
-                    )
-                ], className="col"),
+    dcc.Tabs(
+        id="main-tabs",
+        value="tab-trends",
+        children=[
+                        dcc.Tab(
+                label="Staff analysis",
+                value="tab-staff",
+                children=[
+                    html.Div([
+                        html.Div("Patient satifaction overview", className="section-title"),
+                        html.Div("Coming soon…", className="sub"),
+                    ], className="card"),
+                ],
+            ),
+            # ---------------- TAB 1 ----------------
+            dcc.Tab(
+                label="Trends & relationships",
+                value="tab-trends",
+                children=[
 
-                html.Div([
-                    html.Label("Select Metric(s):", className="label"),
-                    dcc.Dropdown(
-                        id='metric-dropdown',
-                        options=[{'label': m, 'value': m} for m in metrics],
-                        value=[metrics[0]],
-                        multi=True,
-                        clearable=False,
-                        className="dropdown",
-                    )
-                ], className="col"),
-                html.Div([
-    html.Label("Highlight Event(s):", className="label"),
-    dcc.Checklist(
-        id="event-checklist",
-        options=[{"label": e, "value": e} for e in event_types],
-        value=event_types,   # use [] if you want events off by default
-        inline=True,
-        style={"marginTop": "6px"}
-    )
-], className="col"),
+                    # Controls card (SERVICE / METRIC / EVENTS) - ONLY IN TAB 1
+                    html.Div([
+                        html.Div([
 
-            ], className="row")
-        ], className="card"),
+                            html.Div([
+                                html.Label("Select Service:", className="label"),
+                                dcc.Dropdown(
+                                    id='service-dropdown',
+                                    options=[{'label': s, 'value': s} for s in services_list],
+                                    value=[services_list[0]],
+                                    multi=True,
+                                    clearable=False,
+                                    className="dropdown",
+                                )
+                            ], className="col"),
 
-        # Charts card
-        # Charts card
-html.Div([
-    html.Div("Trends and relationships", className="section-title"),
-    
-    dcc.Graph(
-        id='time-series-plot',
-        className="graph",
-        style={"height": "520px"}, 
-        config={"responsive": True, "displayModeBar": True, "scrollZoom": True},
-        clear_on_unhover=True
+                            html.Div([
+                                html.Label("Select Metric(s):", className="label"),
+                                dcc.Dropdown(
+                                    id='metric-dropdown',
+                                    options=[{'label': m, 'value': m} for m in metrics],
+                                    value=[metrics[0]],
+                                    multi=True,
+                                    clearable=False,
+                                    className="dropdown",
+                                )
+                            ], className="col"),
+
+                            html.Div([
+                                html.Label("Highlight Event(s):", className="label"),
+                                dcc.Checklist(
+                                    id="event-checklist",
+                                    options=[{"label": e, "value": e} for e in event_types],
+                                    value=event_types,  # [] if you want off by default
+                                    inline=True,
+                                    style={"marginTop": "6px"}
+                                )
+                            ], className="col"),
+
+                        ], className="row")
+                    ], className="card"),
+
+                    # Charts card
+                    html.Div([
+                        html.Div("Trends and relationships", className="section-title"),
+
+                        dcc.Graph(
+                            id='time-series-plot',
+                            className="graph",
+                            style={"height": "520px"},
+                            config={"responsive": True, "displayModeBar": True, "scrollZoom": True},
+                            clear_on_unhover=True
+                        ),
+
+                        dcc.Graph(
+                            id='scatterplt',
+                            className="graph",
+                            style={"height": "520px"},
+                            config={"responsive": True, "displayModeBar": True, "scrollZoom": True},
+                            clear_on_unhover=True
+                        ),
+                    ], className="card"),
+                ],
+            ),
+
+            # ---------------- TAB 2 ----------------
+            dcc.Tab(
+                label="Radar comparison",
+                value="tab-radar",
+                children=[
+
+                    # Radar controls - ONLY IN TAB 2
+                    html.Div([
+                        html.Div("Radar comparison", className="section-title"),
+                        html.Div([
+
+                            html.Div([
+                                html.Label("Select A:", className="label"),
+                                dcc.Dropdown(
+                                    id='radar-a',
+                                    options=entity_options,
+                                    value=entity_options[0]['value'],
+                                    searchable=True,
+                                    clearable=False,
+                                    className="dropdown",
+                                )
+                            ], className="col"),
+
+                            html.Div([
+                                html.Label("Select B:", className="label"),
+                                dcc.Dropdown(
+                                    id='radar-b',
+                                    options=entity_options,
+                                    value=entity_options[1]['value'] if len(entity_options) > 1 else entity_options[0]['value'],
+                                    searchable=True,
+                                    clearable=False,
+                                    className="dropdown",
+                                )
+                            ], className="col"),
+
+                        ], className="row"),
+                    ], className="card"),
+
+                    html.Div(html.Div(id="radarplt"), className="card"),
+                    html.Div(id="radar-info", className="card"),
+                ],
+            ),
+
+            
+
+
+            # ---------------- TAB 4 ----------------
+            dcc.Tab(
+                label="Patient satisfaction flow",
+                value="tab-notes",
+                children=[
+                    html.Div([
+                        html.Div("Notes / insights", className="section-title"),
+                        html.Div("Coming soon…", className="sub"),
+                    ], className="card"),
+                ],
+            ),
+        ],
     ),
 
-    dcc.Graph(
-        id='scatterplt',
-        className="graph",
-        style={"height": "520px"}, 
-        config={"responsive": True, "displayModeBar": True, "scrollZoom": True},
-        clear_on_unhover=True
-    ),
-    
-], className="card"),
-
-
-        # Radar card
-        html.Div([
-            html.Div("Radar comparison", className="section-title"),
-            html.Div([
-                html.Div([
-                    html.Label("Select A:", className="label"),
-                    dcc.Dropdown(
-                        id='radar-a',
-                        options=entity_options,
-                        value=entity_options[0]['value'],
-                        searchable=True,
-                        clearable=False,
-                        className="dropdown",
-                    )
-                ], className="col"),
-
-                html.Div([
-                    html.Label("Select B:", className="label"),
-                    dcc.Dropdown(
-                        id='radar-b',
-                        options=entity_options,
-                        value=entity_options[1]['value'] if len(entity_options) > 1 else entity_options[0]['value'],
-                        searchable=True,
-                        clearable=False,
-                        className="dropdown",
-                    )
-                ], className="col"),
-            ], className="row"),
-        ], className="card"),
-
-        html.Div(html.Div(id="radarplt"), className="card"),
-        html.Div(id="radar-info", className="card"),
-
-    ], className="page")
-])
+], className="page")])
 
 
 @app.callback(
