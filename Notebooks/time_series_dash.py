@@ -1,7 +1,7 @@
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from dash import Dash, html, dcc, Input, Output
+from dash import Dash, html, dcc, Input, Output, State, Patch, ctx, no_update
 import webbrowser
 import numpy as np
 import matplotlib
@@ -207,6 +207,8 @@ app.layout = html.Div([
                             config={"responsive": True, "displayModeBar": True, "scrollZoom": True},
                             clear_on_unhover=True
                         ),
+
+                        dcc.Store(id="selected-weeks")
                     ], className="card"),
                 ],
             ),
@@ -273,26 +275,58 @@ app.layout = html.Div([
 
 ], className="page")])
 
+@app.callback(
+    Output("selected-weeks", "data"),
+    Input("time-series-plot", "selectedData"),
+    Input("scatterplt", "selectedData"),
+    prevent_initial_call=True,
+)
+
+def update_selected_weeks(selectedData1,selectedData2):
+
+    # If nothing is selected there is nothing to update
+    if not selectedData1 and not selectedData2:
+        return no_update
+    
+    # Get and store selected weeks
+    selected = []
+    if selectedData1 is not None:
+        selected = [p["x"] for p in selectedData1["points"] if p.get("x") is not None]
+    if selectedData2 is not None:
+        selected = selected+ [p.get("customdata")[0] for p in selectedData2["points"] if p.get("customdata") is not None]
+    
+    return selected
 
 @app.callback(
     Output('scatterplt', 'figure'),
     Output('time-series-plot', 'figure'),
     Input('service-dropdown', 'value'),
     Input('metric-dropdown', 'value'),
-    Input("event-checklist", "value")
+    Input("event-checklist", "value"),
+    Input("selected-weeks", "data"),
+    State('time-series-plot', 'figure'),  
+    State('scatterplt', 'figure')
 )
 
-def update_plot(service_selected, metrics_selected, selected_events):
-
-  
-    
+def update_plot(service_selected, metrics_selected, selected_events,selected_weeks,c_fig,c_scat):
+        
+        # If callback happend due to selection do not update whole figure.
+        triggered_id = ctx.triggered_id
+        if triggered_id == "selected-weeks":
+            if not selected_weeks:
+                 return no_update, no_update
+        
         fig = go.Figure()
         fig_scatter = go.Figure() 
+
+        # If no services or metric selected ask for atleast one
         if len(service_selected)==0 or len(metrics_selected)==0:
             fig.update_layout(
                 title="Please select at least one service and one metric"
             )
             return fig_scatter, fig
+        
+        # Construct the correct amount of subplots per selected service
         if len(service_selected) == 1:
             fig = make_subplots(rows=1, cols=1)
             positions = [[1,1]]
@@ -320,15 +354,13 @@ def update_plot(service_selected, metrics_selected, selected_events):
             positions = [[1,1]]
 
         i=0
-        show = False
+
+        # Fill the subplot for each service
         for s in service_selected:
             df_service = services[services['service'] == s]
-
             p = positions[i]
             i+=1
             
-
-                
             # Add one line per selected metric
             for metric in metrics_selected:
                 fig.add_trace(go.Scatter(
@@ -338,6 +370,7 @@ def update_plot(service_selected, metrics_selected, selected_events):
                     customdata=df_service['week'],
                     name=f"{s} — {metric}",
                     line=dict(color=SERVICE_COLORS[s],dash=metric_dash_map.get(metric, 'solid')),
+                    selectedpoints=[i for i, w in enumerate(df_service['week']) if selected_weeks and w in selected_weeks],
                     marker=dict(color=SERVICE_COLORS[s]),
                     selected=dict(
                         marker=dict(opacity=1,color=SERVICE_COLORS_Selected[metric])
@@ -355,8 +388,6 @@ def update_plot(service_selected, metrics_selected, selected_events):
                 w = df_service.loc[df_service["event"] == event, "week"]
                 w = pd.to_numeric(w, errors="coerce").dropna().unique()
 
-                first = True   # only first rect shows legend entry
-
                 for week in w:
                     fig.add_vrect(
                         x0=week - 0.5,
@@ -368,20 +399,21 @@ def update_plot(service_selected, metrics_selected, selected_events):
                         row=p[0],
                         col=p[1],
 
-         # only once per event
                     )
-                    first = False
+                    
 
         fig.update_layout(
                 title=f"Metrics over time per service",
                 xaxis_title="Week",
                 yaxis_title="Value",
-                legend_title="Metric"
+                legend_title="Metric",
             )
-
+        
+        scatter_data = merged[merged['service'].isin(service_selected)]
+       
         # Scatter plot satisfaction vs patient-staff ratio
         fig_scatter = px.scatter(
-            merged[merged['service'].isin(service_selected)],
+            scatter_data,
             x='staff_to_patient_ratio',
             y='patient_satisfaction',
             custom_data=['week', 'service'],
@@ -396,10 +428,16 @@ def update_plot(service_selected, metrics_selected, selected_events):
             },
             title=f'Staffing vs Patient Satisfaction'
         )
-      
 
+        # Sync and highlight the selected data
+        selectedpointsRatio = [i for i, w in enumerate(scatter_data['week']) if selected_weeks and w in selected_weeks]
+        if selectedpointsRatio is not None:
+         for trace in fig_scatter.data:
+            trace.selectedpoints = selectedpointsRatio
+            trace.selected = dict(marker=dict(opacity=1, size=14))
+            trace.unselected = dict(marker=dict(opacity=0.3))
 
-        fig.update_layout(dragmode='select', clickmode='event+select')
+        fig.update_layout( dragmode='select', clickmode='event+select')
         fig_scatter.update_layout(dragmode='select', clickmode='event+select')
         
         return fig_scatter, fig
