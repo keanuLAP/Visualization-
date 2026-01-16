@@ -46,9 +46,10 @@ depts = services['service'].unique().tolist()
 events = services['event'].unique().tolist()
 staff_morale_cats = patient_sat_cats
 
-# Node labels with explicit prefixes for staff morale
+# Node labels with explicit prefixes
+patient_sat_labels = [f'Patient Satisfaction: {cat}' for cat in patient_sat_cats]
 staff_morale_labels = [f'Staff Morale: {cat}' for cat in staff_morale_cats]
-node_labels = patient_sat_cats + depts + events + staff_morale_labels
+node_labels = patient_sat_labels + depts + events + staff_morale_labels
 
 # Indices
 num_sat = len(patient_sat_cats)
@@ -110,8 +111,13 @@ for _, row in grouped.iterrows():
 # Node colors: patient satisfaction categories, departments, events with their respective colors, others neutral
 node_colors = []
 for label in node_labels:
-    if label in color_map:
-        node_colors.append(color_map[label])
+    # Extract the category name without prefix
+    if label.startswith('Patient Satisfaction: '):
+        cat_name = label.replace('Patient Satisfaction: ', '')
+        node_colors.append(color_map.get(cat_name, 'lightgray'))
+    elif label.startswith('Staff Morale: '):
+        cat_name = label.replace('Staff Morale: ', '')
+        node_colors.append(color_map.get(cat_name, 'lightgray'))
     elif label in SERVICE_COLORS:
         node_colors.append(SERVICE_COLORS[label])
     elif label in event_color_map:
@@ -689,7 +695,9 @@ def update_sankey(opacity, selected_cat, filter_enabled):
         filtered_events = filtered_grouped['event'].unique().tolist()
         filtered_morale_cats = filtered_grouped['staff_morale_cat'].unique().tolist()
         
-        filtered_node_labels = filtered_sat_cats + filtered_depts + filtered_events + filtered_morale_cats
+        filtered_patient_sat_labels = [f'Patient Satisfaction: {cat}' for cat in filtered_sat_cats]
+        filtered_staff_morale_labels = [f'Staff Morale: {cat}' for cat in filtered_morale_cats]
+        filtered_node_labels = filtered_patient_sat_labels + filtered_depts + filtered_events + filtered_staff_morale_labels
         
         num_sat_f = len(filtered_sat_cats)
         num_dept_f = len(filtered_depts)
@@ -698,8 +706,13 @@ def update_sankey(opacity, selected_cat, filter_enabled):
         # Build filtered node colors
         filtered_node_colors = []
         for label in filtered_node_labels:
-            if label in color_map:
-                filtered_node_colors.append(color_map[label])
+            # Extract the category name without prefix
+            if label.startswith('Patient Satisfaction: '):
+                cat_name = label.replace('Patient Satisfaction: ', '')
+                filtered_node_colors.append(color_map.get(cat_name, 'lightgray'))
+            elif label.startswith('Staff Morale: '):
+                cat_name = label.replace('Staff Morale: ', '')
+                filtered_node_colors.append(color_map.get(cat_name, 'lightgray'))
             elif label in SERVICE_COLORS:
                 filtered_node_colors.append(SERVICE_COLORS[label])
             elif label in event_color_map:
@@ -791,7 +804,6 @@ def update_sankey(opacity, selected_cat, filter_enabled):
         )
     ))
     fig.update_layout(title_text=title_text, font_size=10)
-    return fig
     return fig
 
 if __name__ == '__main__':
