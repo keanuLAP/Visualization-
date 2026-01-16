@@ -1,7 +1,7 @@
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from dash import Dash, html, dcc, Input, Output
+from dash import Dash, html, dcc, Input, Output, State, Patch, ctx, no_update
 import webbrowser
 import numpy as np
 import matplotlib
@@ -72,12 +72,11 @@ event_types = [e for e in event_types if e != 'none']
 event_colors = px.colors.qualitative.Pastel[:len(event_types)]
 event_color_map = dict(zip(event_types, event_colors))
 
-SERVICE_COLORS = dict(
-    zip(services_list, pc.qualitative.Set2)
-)
-SERVICE_COLORS_Selected = dict(
-    zip(metrics, pc.qualitative.Set1)
-)
+palette = pc.qualitative.Set2
+SERVICE_COLORS = {s: palette[i % len(palette)] for i, s in enumerate(services_list)}
+
+SERVICE_COLORS_Selected = {m: pc.qualitative.Set1[i % len(pc.qualitative.Set1)] for i, m in enumerate(metrics)}
+
 metric_dash_map = {
     'patient_satisfaction': 'solid',
     'staff_morale': 'dash',
@@ -243,206 +242,329 @@ radar_norm_cols = [c + "_norm" for c in radar_cols]
 app = Dash(__name__)
 
 app.layout = html.Div([
-    html.H1("Hospital Metrics Over Time"),
+    html.Div([  # page
 
     html.Div([
-        html.Label("Select Service:"),
-        dcc.Dropdown(
-            id='service-dropdown',
-            options=[{'label': s, 'value': s} for s in services_list],
-            value=[services_list[0]],
-            multi=True,
-            clearable=False
-        )
-    ], style={'width': '45%', 'display': 'inline-block'}),
+        html.H1("Hospital Metrics Over Time", className="h1"),
+        html.Div("Hover for details • Select to compare • Scroll to zoom", className="sub"),
+    ], className="header"),
 
-    html.Div([
-        html.Label("Select Metric(s):"),
-        dcc.Dropdown(
-            id='metric-dropdown',
-            options=[{'label': m, 'value': m} for m in metrics],
-            value=[metrics[0]],
-            multi=True,  # allow multiple metrics
-            clearable=False
-        )
-    ], style={'width': '45%', 'display': 'inline-block', 'marginLeft': '5%'}),
+    dcc.Tabs(
+        id="main-tabs",
+        value="tab-trends",
+        children=[
+                        dcc.Tab(
+                label="Staff analysis",
+                value="tab-staff",
+                children=[
+                    html.Div([
+                        html.Div("Patient satifaction overview", className="section-title"),
+                        html.Div("Coming soon…", className="sub"),
+                    ], className="card"),
+                ],
+            ),
+            # ---------------- TAB 1 ----------------
+            dcc.Tab(
+                label="Trends & relationships",
+                value="tab-trends",
+                children=[
 
-    dcc.Graph(id='time-series-plot',
-        config={'displayModeBar': True},
-        clear_on_unhover=True),
-    dcc.Graph(id='scatterplt',
-        config={'displayModeBar': True},
-        clear_on_unhover=True),
+                    # Controls card (SERVICE / METRIC / EVENTS) - ONLY IN TAB 1
+                    html.Div([
+                        html.Div([
 
-     html.H2("Radar comparison"),
+                            html.Div([
+                                html.Label("Select Service:", className="label"),
+                                dcc.Dropdown(
+                                    id='service-dropdown',
+                                    options=[{'label': s, 'value': s} for s in services_list],
+                                    value=[services_list[0]],
+                                    multi=True,
+                                    clearable=False,
+                                    className="dropdown",
+                                )
+                            ], className="col"),
 
-html.Div([
-    html.Div([
-        html.Label("Select A:"),
-        dcc.Dropdown(
-            id='radar-a',
-            options=entity_options,
-            value=entity_options[0]['value'],
-            searchable=True,
-            clearable=False
-        )
-    ], style={'width': '45%', 'display': 'inline-block'}),
+                            html.Div([
+                                html.Label("Select Metric(s):", className="label"),
+                                dcc.Dropdown(
+                                    id='metric-dropdown',
+                                    options=[{'label': m, 'value': m} for m in metrics],
+                                    value=[metrics[0]],
+                                    multi=True,
+                                    clearable=False,
+                                    className="dropdown",
+                                )
+                            ], className="col"),
 
-    html.Div([
-        html.Label("Select B:"),
-        dcc.Dropdown(
-            id='radar-b',
-            options=entity_options,
-            value=entity_options[1]['value'] if len(entity_options) > 1 else entity_options[0]['value'],
-            searchable=True,
-            clearable=False
-        )
-    ], style={'width': '45%', 'display': 'inline-block', 'marginLeft': '5%'}),
-]),
+                            html.Div([
+                                html.Label("Highlight Event(s):", className="label"),
+                                dcc.Checklist(
+                                    id="event-checklist",
+                                    options=[{"label": e, "value": e} for e in event_types],
+                                    value=event_types,  # [] if you want off by default
+                                    inline=True,
+                                    style={"marginTop": "6px"}
+                                )
+                            ], className="col"),
 
-html.Div(id="radarplt"),
-html.Div(id="radar-info"),
+                        ], className="row")
+                    ], className="card"),
 
-html.H2("Patient Satisfaction Flow"),
+                    # Charts card
+                    html.Div([
+                        html.Div("Trends and relationships", className="section-title"),
 
-html.Div([
-    html.Label("Select Patient Satisfaction Category:"),
-    dcc.Dropdown(
-        id='sankey-category-dropdown',
-        options=[{'label': 'All', 'value': 'All'}] + [{'label': cat, 'value': cat} for cat in patient_sat_cats],
-        value='All',
-        clearable=False
-    )
-], style={'width': '45%', 'display': 'inline-block'}),
+                        dcc.Graph(
+                            id='time-series-plot',
+                            className="graph",
+                            style={"height": "520px"},
+                            config={"responsive": True, "displayModeBar": True, "scrollZoom": True},
+                            clear_on_unhover=True
+                        ),
 
-dcc.Graph(id='sankey'),
-html.P("Link Opacity"),
-dcc.Slider(id='sankey-opacity', min=0, max=1, value=0.5, step=0.1),
+                        dcc.Graph(
+                            id='scatterplt',
+                            className="graph",
+                            style={"height": "520px"},
+                            config={"responsive": True, "displayModeBar": True, "scrollZoom": True},
+                            clear_on_unhover=True
+                        ),
 
-])
+                        dcc.Store(id="selected-weeks")
+                    ], className="card"),
+                ],
+            ),
+
+            # ---------------- TAB 2 ----------------
+            dcc.Tab(
+                label="Radar comparison",
+                value="tab-radar",
+                children=[
+
+                    # Radar controls - ONLY IN TAB 2
+                    html.Div([
+                        html.Div("Radar comparison", className="section-title"),
+                        html.Div([
+
+                            html.Div([
+                                html.Label("Select A:", className="label"),
+                                dcc.Dropdown(
+                                    id='radar-a',
+                                    options=entity_options,
+                                    value=entity_options[0]['value'],
+                                    searchable=True,
+                                    clearable=False,
+                                    className="dropdown",
+                                )
+                            ], className="col"),
+
+                            html.Div([
+                                html.Label("Select B:", className="label"),
+                                dcc.Dropdown(
+                                    id='radar-b',
+                                    options=entity_options,
+                                    value=entity_options[1]['value'] if len(entity_options) > 1 else entity_options[0]['value'],
+                                    searchable=True,
+                                    clearable=False,
+                                    className="dropdown",
+                                )
+                            ], className="col"),
+
+                        ], className="row"),
+                    ], className="card"),
+
+                    html.Div(html.Div(id="radarplt"), className="card"),
+                    html.Div(id="radar-info", className="card"),
+                ],
+            ),
+
+            
+
+
+            # ---------------- TAB 4 ----------------
+            dcc.Tab(
+                label="Patient satisfaction flow",
+                value="tab-notes",
+                children=[
+                    html.Div([
+                        html.Div("Notes / insights", className="section-title"),
+                        html.Div("Coming soon…", className="sub"),
+                    ], className="card"),
+                ],
+            ),
+        ],
+    ),
+
+], className="page")])
+
+@app.callback(
+    Output("selected-weeks", "data"),
+    Input("time-series-plot", "selectedData"),
+    Input("scatterplt", "selectedData"),
+    prevent_initial_call=True,
+)
+
+def update_selected_weeks(selectedData1,selectedData2):
+
+    # If nothing is selected there is nothing to update
+    if not selectedData1 and not selectedData2:
+        return no_update
+    
+    # Get and store selected weeks
+    selected = []
+    if selectedData1 is not None:
+        selected = [p["x"] for p in selectedData1["points"] if p.get("x") is not None]
+    if selectedData2 is not None:
+        selected = selected+ [p.get("customdata")[0] for p in selectedData2["points"] if p.get("customdata") is not None]
+    
+    return selected
 
 @app.callback(
     Output('scatterplt', 'figure'),
     Output('time-series-plot', 'figure'),
     Input('service-dropdown', 'value'),
-    Input('metric-dropdown', 'value')
+    Input('metric-dropdown', 'value'),
+    Input("event-checklist", "value"),
+    Input("selected-weeks", "data"),
+    State('time-series-plot', 'figure'),  
+    State('scatterplt', 'figure')
 )
 
-def update_plot(service_selected, metrics_selected):
-    
-    fig = go.Figure()
-    fig_scatter = go.Figure() 
-    if len(service_selected)==0 or len(metrics_selected)==0:
-        fig.update_layout(
-            title="Please select at least one service and one metric"
-        )
-        return fig_scatter, fig
-    if len(service_selected)==2:
-        fig = make_subplots(
-        rows=1, cols=2,
-        specs=[[{}, {}]])
-        positions = [[1,1],[1,2]]
-    elif len(service_selected)==3:
-        fig = make_subplots(
-        rows=2, cols=2,
-        specs=[[{}, {}],
-        [{"colspan": 2}, None]])
-        positions = [[1,1],[1,2],[2,1]]
-    elif len(service_selected)==4:
-        fig = make_subplots(
-        rows=2, cols=2,
-        specs=[[{}, {}],
-        [{}, {}]])
-        positions = [[1,1],[1,2],[2,1],[2,2]]
-    else:
-        fig = make_subplots(
-        rows=1, cols=1,
-        specs=[[{}]])
-        positions = [[1,1]]
-
-    i=0
-    show = False
-    for s in service_selected:
-        df_service = services[services['service'] == s]
-
-        p = positions[i]
-        i+=1
+def update_plot(service_selected, metrics_selected, selected_events,selected_weeks,c_fig,c_scat):
         
-        if len(service_selected) ==i:
-            show = True
-            
-        # Add one line per selected metric
-        for metric in metrics_selected:
-            fig.add_trace(go.Scatter(
-                x=df_service['week'],
-                y=df_service[metric],
-                mode='lines+markers',
-                customdata=df_service['week'],
-                name=f"{s} — {metric}",
-                line=dict(color=SERVICE_COLORS[s],dash=metric_dash_map.get(metric, 'solid')),
-                marker=dict(color=SERVICE_COLORS[s]),
-                selected=dict(
-                    marker=dict(opacity=1,color=SERVICE_COLORS_Selected[metric])
-                    ),
-                unselected=dict(
-                    marker=dict(opacity=0.15)
-                    ),
-                    
-                
-            ),row=p[0],
-            col=p[1])
+        # If callback happend due to selection do not update whole figure.
+        triggered_id = ctx.triggered_id
+        if triggered_id == "selected-weeks":
+            if not selected_weeks:
+                 return no_update, no_update
+        
+        fig = go.Figure()
+        fig_scatter = go.Figure() 
 
-        # Highlight events as shaded rectangles
-        for event in event_types:
-            event_weeks = df_service[df_service['event'] == event]['week'].tolist()
-            for week in event_weeks:
-                fig.add_vrect(
-                    x0=week-0.5, x1=week+0.5,
-                    fillcolor=event_color_map[event],
-                    opacity=0.3,
-                    layer="below",
-                    line_width=0,
-                    row=p[0],
-                    col=p[1]
-                )
-            # Add invisible scatter for legend
-            fig.add_trace(go.Scatter(
-                x=[None], y=[None],
-                mode='markers',
-                marker=dict(size=10, color=event_color_map[event]),
-                name=event,
-                showlegend=show
-            ),row=p[0],col=p[1])
+        # If no services or metric selected ask for atleast one
+        if len(service_selected)==0 or len(metrics_selected)==0:
+            fig.update_layout(
+                title="Please select at least one service and one metric"
+            )
+            return fig_scatter, fig
+        
+        # Construct the correct amount of subplots per selected service
+        if len(service_selected) == 1:
+            fig = make_subplots(rows=1, cols=1)
+            positions = [[1,1]]
+        elif len(service_selected)==2:
+            fig = make_subplots(
+            rows=1, cols=2,
+            specs=[[{}, {}]])
+            positions = [[1,1],[1,2]]
+        elif len(service_selected)==3:
+            fig = make_subplots(
+            rows=2, cols=2,
+            specs=[[{}, {}],
+            [{}, {}]])
+            positions = [[1,1],[1,2],[2,1]]
+        elif len(service_selected)==4:
+            fig = make_subplots(
+            rows=2, cols=2,
+            specs=[[{}, {}],
+            [{}, {}]])
+            positions = [[1,1],[1,2],[2,1],[2,2]]
+        else:
+            fig = make_subplots(
+            rows=1, cols=1,
+            specs=[[{}]])
+            positions = [[1,1]]
+
+        i=0
+
+        # Fill the subplot for each service
+        for s in service_selected:
+            df_service = services[services['service'] == s]
+            p = positions[i]
+            i+=1
+            
+            # Add one line per selected metric
+            for metric in metrics_selected:
+                fig.add_trace(go.Scatter(
+                    x=df_service['week'],
+                    y=df_service[metric],
+                    mode='lines+markers',
+                    customdata=df_service['week'],
+                    name=f"{s} — {metric}",
+                    line=dict(color=SERVICE_COLORS[s],dash=metric_dash_map.get(metric, 'solid')),
+                    selectedpoints=[i for i, w in enumerate(df_service['week']) if selected_weeks and w in selected_weeks],
+                    marker=dict(color=SERVICE_COLORS[s]),
+                    selected=dict(
+                        marker=dict(opacity=1,color=SERVICE_COLORS_Selected[metric])
+                        ),
+                    unselected=dict(
+                        marker=dict(opacity=0.15)
+                        ),
+                        
+                    
+                ),row=p[0],
+                col=p[1])
+
+            # Highlight events as shaded rectangles
+            for event in selected_events:
+                w = df_service.loc[df_service["event"] == event, "week"]
+                w = pd.to_numeric(w, errors="coerce").dropna().unique()
+
+                for week in w:
+                    fig.add_vrect(
+                        x0=week - 0.5,
+                        x1=week + 0.5,
+                        fillcolor=event_color_map[event],
+                        opacity=0.25,
+                        layer="below",
+                        line_width=0,
+                        row=p[0],
+                        col=p[1],
+
+                    )
+                    
 
         fig.update_layout(
-            title=f"Metrics over time per service",
-            xaxis_title="Week",
-            yaxis_title="Value",
-            legend_title="Metric"
+                title=f"Metrics over time per service",
+                xaxis_title="Week",
+                yaxis_title="Value",
+                legend_title="Metric",
+            )
+        
+        scatter_data = merged[merged['service'].isin(service_selected)]
+       
+        # Scatter plot satisfaction vs patient-staff ratio
+        fig_scatter = px.scatter(
+            scatter_data,
+            x='staff_to_patient_ratio',
+            y='patient_satisfaction',
+            custom_data=['week', 'service'],
+            color='service',
+            color_discrete_map=SERVICE_COLORS,
+            size='staff_coverage',
+            hover_data=['week', 'staff_coverage', 'patients_admitted', 'available_beds'],
+            size_max=12,
+            labels={
+                'staff_to_patient_ratio': 'Staff / patient ratio',
+                'patient_satisfaction': 'Patient satisfaction',
+            },
+            title=f'Staffing vs Patient Satisfaction'
         )
 
-    # Scatter plot satisfaction vs patient-staff ratio
-    fig_scatter = px.scatter(
-        merged[merged['service'].isin(service_selected)],
-        x='staff_to_patient_ratio',
-        y='patient_satisfaction',
-        custom_data=['week', 'service'],
-        color='service',
-        color_discrete_map=SERVICE_COLORS,
-        size='staff_coverage',
-        hover_data=['week', 'staff_coverage', 'patients_admitted', 'available_beds'],
-        size_max=12,
-        labels={
-            'staff_to_patient_ratio': 'Staff / patient ratio',
-            'patient_satisfaction': 'Patient satisfaction',
-        },
-        title=f'Staffing vs Patient Satisfaction'
-    )
-    fig.update_xaxes(matches='x')
-    fig.update_yaxes(matches='y')
-    fig.update_layout(dragmode='select', clickmode='event+select')
-    fig_scatter.update_layout(dragmode='select', clickmode='event+select')
-    return fig_scatter, fig
+        # Sync and highlight the selected data
+        selectedpointsRatio = [i for i, w in enumerate(scatter_data['week']) if selected_weeks and w in selected_weeks]
+        if selectedpointsRatio is not None:
+         for trace in fig_scatter.data:
+            trace.selectedpoints = selectedpointsRatio
+            trace.selected = dict(marker=dict(opacity=1, size=14))
+            trace.unselected = dict(marker=dict(opacity=0.3))
+
+        fig.update_layout( dragmode='select', clickmode='event+select')
+        fig_scatter.update_layout(dragmode='select', clickmode='event+select')
+        
+        return fig_scatter, fig
+
 
 @app.callback(
     Output('radarplt', 'children'),
@@ -583,5 +705,6 @@ def update_sankey(opacity, selected_cat):
 
 if __name__ == '__main__':
     webbrowser.open("http://127.0.0.1:8050/")
-    app.run(debug=True)
+    app.run(debug=True, dev_tools_ui=True, dev_tools_props_check=True)
+
 
