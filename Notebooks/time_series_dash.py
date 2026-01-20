@@ -14,11 +14,11 @@ import plotly.colors as pc
 from plotly.subplots import make_subplots
 
 # Load your services CSV
-services = pd.read_csv(r"../Hospital Beds Management/services_weekly.csv")
-df_HBM_patients        = pd.read_csv('../Hospital Beds Management/patients.csv', delimiter=',', low_memory=False)
-df_HBM_staff           = pd.read_csv('../Hospital Beds Management/staff.csv', delimiter=',', low_memory=False)
-df_HBM_staff_schedule  = pd.read_csv('../Hospital Beds Management/staff_schedule.csv', delimiter=',', low_memory=False)
-df_HBM_services_weekly = pd.read_csv('../Hospital Beds Management/services_weekly.csv', delimiter=',', low_memory=False)
+services = pd.read_csv(r"Hospital Beds Management/services_weekly.csv")
+df_HBM_patients        = pd.read_csv('Hospital Beds Management/patients.csv', delimiter=',', low_memory=False)
+df_HBM_staff           = pd.read_csv('Hospital Beds Management/staff.csv', delimiter=',', low_memory=False)
+df_HBM_staff_schedule  = pd.read_csv('Hospital Beds Management/staff_schedule.csv', delimiter=',', low_memory=False)
+df_HBM_services_weekly = pd.read_csv('Hospital Beds Management/services_weekly.csv', delimiter=',', low_memory=False)
 
 
 # Compute derived metrics
@@ -244,8 +244,102 @@ entity_options = avg_options + staff_options
 
 radar_norm_cols = [c + "_norm" for c in radar_cols]
 
+# Calculate patient metrics for patient radar chart
+df_HBM_patients['arrival_date'] = pd.to_datetime(df_HBM_patients['arrival_date'])
+df_HBM_patients['departure_date'] = pd.to_datetime(df_HBM_patients['departure_date'])
+df_HBM_patients['days_admitted'] = (df_HBM_patients['departure_date'] - df_HBM_patients['arrival_date']).dt.days + 1
 
-# Dash app!!!
+# Estimate which week the patient was admitted (assuming year starts Jan 1, week 1)
+# Simple assumption: each week is 7 days, year starts from week 1 on Jan 1
+df_HBM_patients['admission_day_of_year'] = df_HBM_patients['arrival_date'].dt.dayofyear
+df_HBM_patients['departure_day_of_year'] = df_HBM_patients['departure_date'].dt.dayofyear
+df_HBM_patients['admission_week'] = ((df_HBM_patients['admission_day_of_year'] - 1) // 7) + 1
+df_HBM_patients['departure_week'] = ((df_HBM_patients['departure_day_of_year'] - 1) // 7) + 1
+
+patient_metrics = []
+for _, pat in df_HBM_patients.iterrows():
+    pat_id = pat['patient_id']
+    pat_name = pat['name']
+    pat_satisfaction = pat['satisfaction']
+    service = pat['service']
+    admission_week = pat['admission_week']
+    departure_week = pat['departure_week']
+    days_admitted = pat['days_admitted']
+    
+    # Get weeks during patient stay
+    weeks_during_stay = df_HBM_services_weekly[
+        (df_HBM_services_weekly['week'] >= admission_week) & 
+        (df_HBM_services_weekly['week'] <= departure_week) &
+        (df_HBM_services_weekly['service'] == service)
+    ]
+    
+    if len(weeks_during_stay) == 0:
+        continue
+    
+    # Count events during stay (events that are not 'none')
+    num_events = len(weeks_during_stay[weeks_during_stay['event'] != 'none'])
+    
+    # Average staff morale during stay
+    avg_staff_morale = weeks_during_stay['staff_morale'].mean()
+    
+    # Average available beds during stay
+    avg_available_beds = weeks_during_stay['available_beds'].mean()
+    
+    # Patients per staff: patients_admitted / staff_coverage
+    # Calculate from the services data - assume staff coverage relates to workload
+    avg_patients_admitted = weeks_during_stay['patients_admitted'].mean()
+    patients_per_staff = avg_patients_admitted / len(weeks_during_stay) if len(weeks_during_stay) > 0 else 0
+    
+    patient_metrics.append({
+        'patient_id': pat_id,
+        'patient_name': pat_name,
+        'satisfaction': pat_satisfaction,
+        'service': service,
+        'days_admitted': days_admitted,
+        'num_events': num_events,
+        'avg_staff_morale': avg_staff_morale,
+        'avg_available_beds': avg_available_beds,
+        'patients_per_staff': patients_per_staff
+    })
+
+df_patient_metrics = pd.DataFrame(patient_metrics)
+
+# Categorize patients by satisfaction
+# Use percentiles instead of fixed thresholds since satisfaction ranges 60-99
+lowest_threshold = df_patient_metrics['satisfaction'].quantile(0.25)  # Bottom 25%
+highest_threshold = df_patient_metrics['satisfaction'].quantile(0.75)  # Top 25%
+
+highest_sat_patients = df_patient_metrics[df_patient_metrics['satisfaction'] >= highest_threshold]
+lowest_sat_patients = df_patient_metrics[df_patient_metrics['satisfaction'] <= lowest_threshold]
+
+# Create options for dropdowns
+highest_options = [
+    {'label': f"{row['patient_name']} (Satisfaction: {row['satisfaction']})", 
+     'value': row['patient_id']}
+    for _, row in highest_sat_patients.iterrows()
+]
+highest_options = sorted(highest_options, key=lambda x: x['label'])
+
+lowest_options = [
+    {'label': f"{row['patient_name']} (Satisfaction: {row['satisfaction']})", 
+     'value': row['patient_id']}
+    for _, row in lowest_sat_patients.iterrows()
+]
+lowest_options = sorted(lowest_options, key=lambda x: x['label'])
+
+# Patient radar columns
+patient_radar_cols = ['days_admitted', 'num_events', 'avg_staff_morale', 'avg_available_beds', 'patients_per_staff']
+patient_radar_labels = ['Days Admitted', '# Events', 'Staff Morale', 'Available Beds', 'Patients per Staff']
+
+# Normalize patient metrics
+df_patient_norm = df_patient_metrics.copy()
+for col in patient_radar_cols:
+    col_data = df_patient_norm[col]
+    m_min, m_max = col_data.min(), col_data.max()
+    if m_max == m_min:
+        df_patient_norm[col + '_norm'] = 0.5
+    else:
+        df_patient_norm[col + '_norm'] = (col_data - m_min) / (m_max - m_min)
 app = Dash(__name__)
 
 app.layout = html.Div([
@@ -337,9 +431,26 @@ app.layout = html.Div([
                             config={"responsive": True, "displayModeBar": True, "scrollZoom": True},
                             clear_on_unhover=True
                         ),
+                    ], className="card"),
+
+                    # Spider chart for clicked scatter plot point
+                    html.Div(id='spider-chart-container', style={'display': 'none'}, children=[
+                        html.Div([
+                            html.Div("Service Profile Comparison", className="section-title"),
+                            html.Div(html.Div(id="spider-chart-plot"), className="card"),
+                            html.Div(id="spider-chart-info", className="card"),
+                        ], className="card"),
+                    ]),
+
+                    # Pie chart for staff assignment for clicked week
+                    html.Div(id='pie-chart-container', style={'display': 'none'}, children=[
+                        html.Div([
+                            html.Div("Staff Assignment Analysis", className="section-title"),
+                            html.Div(dcc.Graph(id="staff-assignment-pie", className="graph", style={"height": "500px"}, config={"responsive": True, "displayModeBar": True}), className="card"),
+                        ], className="card"),
+                    ]),
 
                         dcc.Store(id="selected-weeks")
-                    ], className="card"),
                 ],
             ),
 
@@ -805,6 +916,117 @@ def update_sankey(opacity, selected_cat, filter_enabled):
     ))
     fig.update_layout(title_text=title_text, font_size=10)
     return fig
+
+@app.callback(
+    Output('spider-chart-container', 'style'),
+    Output('spider-chart-plot', 'children'),
+    Output('spider-chart-info', 'children'),
+    Input('scatterplt', 'clickData'),
+)
+def update_spider_chart(clickData):
+    if clickData is None or len(clickData.get('points', [])) == 0:
+        return {'display': 'none'}, '', ''
+    
+    # Extract data from clicked point
+    point = clickData['points'][0]
+    week = point.get('customdata', [None, None])[0]
+    service = point.get('customdata', [None, None])[1] if len(point.get('customdata', [])) > 1 else None
+    
+    if week is None or service is None:
+        return {'display': 'none'}, '', ''
+    
+    # Get the data for this specific week/service
+    week_service_data = services[(services['week'] == week) & (services['service'] == service)]
+    
+    if week_service_data.empty:
+        return {'display': 'none'}, '', ''
+    
+    week_service_data = week_service_data.iloc[0]
+    
+    # Calculate average values across all weeks/services
+    avg_satisfaction = services['patient_satisfaction'].mean()
+    avg_morale = services['staff_morale'].mean()
+    avg_beds = services['available_beds'].mean()
+    avg_admits_req = (services['patients_admitted'] / services['patients_request']).mean()
+    avg_patients = services['patients_admitted'].mean()
+    
+    # Normalize values to 0-1 scale
+    def normalize(value, col_name):
+        col_data = services[col_name]
+        min_val, max_val = col_data.min(), col_data.max()
+        if max_val == min_val:
+            return 0.5
+        return (value - min_val) / (max_val - min_val)
+    
+    # Current week/service profile
+    current_vals = [
+        normalize(week_service_data['patient_satisfaction'], 'patient_satisfaction'),
+        normalize(week_service_data['staff_morale'], 'staff_morale'),
+        normalize(week_service_data['available_beds'], 'available_beds'),
+        normalize(week_service_data['admits/requests'], 'admits/requests'),
+        normalize(week_service_data['patients_admitted'], 'patients_admitted'),
+    ]
+    
+    # Average profile
+    avg_vals = [
+        normalize(avg_satisfaction, 'patient_satisfaction'),
+        normalize(avg_morale, 'staff_morale'),
+        normalize(avg_beds, 'available_beds'),
+        normalize(avg_admits_req, 'admits/requests'),
+        normalize(avg_patients, 'patients_admitted'),
+    ]
+    
+    labels = ['Patient Satisfaction', 'Staff Morale', 'Available Beds', 'Admits/Requests', 'Patients Admitted']
+    n = len(labels)
+    angles = np.linspace(0, 2*np.pi, n, endpoint=False)
+    angles = np.r_[angles, angles[0]]
+    
+    current_vals_plot = np.r_[current_vals, current_vals[0]]
+    avg_vals_plot = np.r_[avg_vals, avg_vals[0]]
+    
+    fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
+    ax.set_ylim(0, 1)
+    ax.set_yticks([0, .25, .5, .75, 1])
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(labels)
+    
+    ax.plot(angles, current_vals_plot, linewidth=2, marker="o")
+    ax.fill(angles, current_vals_plot, alpha=0.25, label=f"{service} - Week {week}")
+    
+    ax.plot(angles, avg_vals_plot, linewidth=2, marker="^", linestyle='--')
+    ax.fill(angles, avg_vals_plot, alpha=0.1, label="Average")
+    
+    ax.legend(loc="upper right", bbox_to_anchor=(1.25, 1.1), frameon=False)
+    ax.set_title("Service profile comparison", pad=18)
+    
+    def fig_to_data_uri(fig):
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", bbox_inches="tight", dpi=150)
+        plt.close(fig)
+        data = base64.b64encode(buf.getvalue()).decode("utf-8")
+        return "data:image/png;base64," + data
+    
+    img = html.Img(src=fig_to_data_uri(fig), style={"width": "100%", "maxWidth": "650px"})
+    
+    info_box = html.Div([
+        html.Div([
+            html.B("Selected: "), html.Span(f"{service} - Week {week}"), html.Br(),
+            html.Span(f"Satisfaction: {week_service_data['patient_satisfaction']:.1f}"), html.Br(),
+            html.Span(f"Staff Morale: {week_service_data['staff_morale']:.1f}"), html.Br(),
+            html.Span(f"Available Beds: {week_service_data['available_beds']:.0f}"),
+        ], style={'width': '48%', 'display': 'inline-block'}),
+        
+        html.Div([
+            html.B("Average: "), html.Span("All Services"), html.Br(),
+            html.Span(f"Satisfaction: {avg_satisfaction:.1f}"), html.Br(),
+            html.Span(f"Staff Morale: {avg_morale:.1f}"), html.Br(),
+            html.Span(f"Available Beds: {avg_beds:.0f}"),
+        ], style={'width': '48%', 'display': 'inline-block', 'marginLeft': '4%'}),
+    ])
+    
+    return {'display': 'block'}, img, info_box
+
+
 
 if __name__ == '__main__':
     webbrowser.open("http://127.0.0.1:8050/")
