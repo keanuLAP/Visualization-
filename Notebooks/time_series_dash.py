@@ -490,21 +490,19 @@ def update_plot(service_selected, metrics_selected, selected_events,selected_wee
             positions = [[1,1]]
         elif len(service_selected)==2:
             fig = make_subplots(
-            rows=1, cols=2,
-            specs=[[{}, {}]])
-            positions = [[1,1],[1,2]]
+            rows=2, cols=1,
+            specs=[[{}],[{}]])
+            positions = [[1,1],[2,1]]
         elif len(service_selected)==3:
             fig = make_subplots(
-            rows=2, cols=2,
-            specs=[[{}, {}],
-            [{}, {}]])
-            positions = [[1,1],[1,2],[2,1]]
+            rows=3, cols=1,
+            specs=[[{}],[{}],[{}]])
+            positions = [[1,1],[2,1],[3,1]]
         elif len(service_selected)==4:
             fig = make_subplots(
-            rows=2, cols=2,
-            specs=[[{}, {}],
-            [{}, {}]])
-            positions = [[1,1],[1,2],[2,1],[2,2]]
+            rows=4, cols=1,
+            specs=[[{}],[{}],[{}],[{}]])
+            positions = [[1,1],[2,1],[3,1],[4,1]]
         else:
             fig = make_subplots(
             rows=1, cols=1,
