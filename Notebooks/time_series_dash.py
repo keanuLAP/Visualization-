@@ -83,11 +83,17 @@ SERVICE_COLORS_Selected = {m: pc.qualitative.Set1[i % len(pc.qualitative.Set1)] 
 
 # Change wheter line is solid dashe... per mertric
 metric_dash_map = {
-    'patient_satisfaction': 'solid',
-    'staff_morale': 'dash',
-    'available_beds': 'dot',
-    'admits/requests': 'dashdot'
-}
+        'patient_satisfaction': 'solid',
+        'staff_morale': 'dash',
+        'available_beds': 'dot',
+        'admits/requests': 'dashdot'
+        }
+metric_colors = {
+        'patient_satisfaction': 'blue',
+        'staff_morale': 'green',
+        'available_beds': 'orange',
+        'admits/requests': 'red'
+        }
 
 # Group by full path to create links per patient satisfaction category
 grouped = services.groupby(['patient_sat_cat', 'service', 'event', 'staff_morale_cat']).size().reset_index(name='count')
@@ -324,7 +330,8 @@ app.layout = html.Div([
                     # Charts card
                     html.Div([
                         html.Div("Trends and relationships", className="section-title"),
-
+                        
+                        dcc.Graph(id="bar-chart"),
                         dcc.Graph(
                             id='time-series-plot',
                             className="graph",
@@ -461,6 +468,7 @@ def update_selected_weeks(selectedData1,selectedData2):
 @app.callback(
     Output('scatterplt', 'figure'),
     Output('time-series-plot', 'figure'),
+    Output('bar-chart', 'figure'),
     Input('service-dropdown', 'value'),
     Input('metric-dropdown', 'value'),
     Input("event-checklist", "value"),
@@ -471,21 +479,22 @@ def update_selected_weeks(selectedData1,selectedData2):
 
 def update_plot(service_selected, metrics_selected, selected_events,selected_weeks,c_fig,c_scat):
         
+    
         # If callback happend due to selection do not update whole figure.
         triggered_id = ctx.triggered_id
         if triggered_id == "selected-weeks":
             if not selected_weeks:
-                 return no_update, no_update
+                 return no_update, no_update,no_update
         
         fig = go.Figure()
         fig_scatter = go.Figure() 
-
+        bar = go.Figure()
         # If no services or metric selected ask for atleast one
         if len(service_selected)==0 or len(metrics_selected)==0:
             fig.update_layout(
                 title="Please select at least one service and one metric"
             )
-            return fig_scatter, fig
+            return fig_scatter, fig, bar
         
         # Construct the correct amount of subplots per selected service
         if len(service_selected) == 1:
@@ -517,11 +526,24 @@ def update_plot(service_selected, metrics_selected, selected_events,selected_wee
         # Fill the subplot for each service
         for s in service_selected:
             df_service = services[services['service'] == s]
+            avg_metrics = df_service.groupby('service')[metrics].mean().reset_index()
+        
             p = positions[i]
             i+=1
             
             # Add one line per selected metric
+
+            # create bar plot for average metrics per service
             for metric in metrics_selected:
+                bar.add_trace(go.Bar(
+                    x=avg_metrics['service'],
+                    y=avg_metrics[metric],
+                    name= metric,
+                    marker_color=metric_colors.get(metric, 'gray'),
+                    showlegend = i==1
+                ))
+            
+               
                 fig.add_trace(go.Scatter(
                     x=df_service['week'],
                     y=df_service[metric],
@@ -566,6 +588,13 @@ def update_plot(service_selected, metrics_selected, selected_events,selected_wee
                 yaxis_title="Value",
                 legend_title="Metric",
             )
+        bar.update_layout(
+                barmode='group',
+                title=f" Average metrics per service",
+                xaxis_title="Service",
+                yaxis_title="Value",
+                legend_title="Metric",
+            )  
         
         scatter_data = merged[merged['service'].isin(service_selected)]
        
@@ -598,7 +627,7 @@ def update_plot(service_selected, metrics_selected, selected_events,selected_wee
         fig.update_layout( dragmode='select', clickmode='event+select')
         fig_scatter.update_layout(dragmode='select', clickmode='event+select')
         
-        return fig_scatter, fig
+        return fig_scatter, fig,bar
 
 
 @app.callback(
