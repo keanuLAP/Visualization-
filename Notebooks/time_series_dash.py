@@ -75,10 +75,13 @@ event_colors = px.colors.qualitative.Pastel[:len(event_types)]
 event_color_map = dict(zip(event_types, event_colors))
 
 palette = pc.qualitative.Set2
+
+# keep the colors the same for each service and when they are selected
 SERVICE_COLORS = {s: palette[i % len(palette)] for i, s in enumerate(services_list)}
 
 SERVICE_COLORS_Selected = {m: pc.qualitative.Set1[i % len(pc.qualitative.Set1)] for i, m in enumerate(metrics)}
 
+# Change wheter line is solid dashe... per mertric
 metric_dash_map = {
     'patient_satisfaction': 'solid',
     'staff_morale': 'dash',
@@ -245,7 +248,7 @@ entity_options = avg_options + staff_options
 radar_norm_cols = [c + "_norm" for c in radar_cols]
 
 
-# Dash app!!!
+# Dash app
 app = Dash(__name__)
 
 app.layout = html.Div([
@@ -260,7 +263,7 @@ app.layout = html.Div([
         id="main-tabs",
         value="tab-trends",
         children=[
-                        dcc.Tab(
+                dcc.Tab(
                 label="Staff analysis",
                 value="tab-staff",
                 children=[
@@ -343,15 +346,15 @@ app.layout = html.Div([
                 ],
             ),
 
-            # ---------------- TAB 2 ----------------
+            # ---------------- TAB 3 ----------------
             dcc.Tab(
-                label="Radar comparison",
+                label="Staff analysis",
                 value="tab-radar",
                 children=[
 
                     # Radar controls - ONLY IN TAB 2
                     html.Div([
-                        html.Div("Radar comparison", className="section-title"),
+                        html.Div("Staff comparison", className="section-title"),
                         html.Div([
 
                             html.Div([
@@ -381,7 +384,7 @@ app.layout = html.Div([
                         ], className="row"),
                     ], className="card"),
 
-                    html.Div(html.Div(id="radarplt"), className="card"),
+                    dcc.Graph(id="radar-graph"),
                     html.Div(id="radar-info", className="card"),
                 ],
             ),
@@ -557,7 +560,6 @@ def update_plot(service_selected, metrics_selected, selected_events,selected_wee
 
                     )
                     
-
         fig.update_layout(
                 title=f"Metrics over time per service",
                 xaxis_title="Week",
@@ -600,79 +602,99 @@ def update_plot(service_selected, metrics_selected, selected_events,selected_wee
 
 
 @app.callback(
-    Output('radarplt', 'children'),
+    Output('radar-graph', 'figure'),
     Output('radar-info', 'children'),
     Input('radar-a', 'value'),
     Input('radar-b', 'value'),)
 
 
 def update_radar(a_val, b_val):
-    def fig_to_data_uri(fig):
-        buf = io.BytesIO()
-        fig.savefig(buf, format="png", bbox_inches="tight", dpi=150)
-        plt.close(fig)
-        data = base64.b64encode(buf.getvalue()).decode("utf-8")
-        return "data:image/png;base64," + data
     def get_profile_and_info(val):
         if val and val.startswith("staff:"):
             staff_id = val.split(":", 1)[1]
             row = df_norm[df_norm['staff_id'].astype(str) == str(staff_id)].iloc[0]
             return row[radar_norm_cols].astype(float).tolist(), {
-                "label": row["staff_name"], "service": row["service"], "role": row["role"]
+                "label": row["staff_name"], "service": row["service"], "role": row["role"],
+                "avg_staff_morale": row["avg_staff_morale"],"avg_patient_satisfaction": row["avg_patient_satisfaction"],
+                "weeks_worked": row["#weeks worked"]
             }
 
         if val and val.startswith("avg:"):
             service = val.split(":", 1)[1]
+            rows = df_norm[df_norm['service'] == service]
             prof = df_norm[df_norm["service"] == service][radar_norm_cols].mean(numeric_only=True)
             return prof.astype(float).tolist(), {
-                "label": f"AVG — {service}", "service": service, "role": "Average"
+                "label": f"AVG — {service}", "service": service, "role": "Average",
+                "avg_staff_morale": rows["avg_staff_morale"].mean(),"avg_patient_satisfaction": rows["avg_patient_satisfaction"].mean(),
+                "weeks_worked": rows["#weeks worked"].mean()
             }
 
-        return [0] * len(radar_norm_cols), {"label": "Unknown", "service": "-", "role": "-"}
+        return [0] * len(radar_norm_cols), {"label": "Unknown", "service": "-", "role": "-",
+                                            "avg_staff_morale": None,"avg_patient_satisfaction": None,
+                                            "weeks_worked": None,}
     
     a_profile, a_info = get_profile_and_info(a_val)
     b_profile, b_info = get_profile_and_info(b_val)
 
     labels = [c.replace("avg_", "").replace("_", " ").title() for c in radar_cols]
-    n = len(labels)
-    angles = np.linspace(0, 2*np.pi, n, endpoint=False)
-    angles = np.r_[angles, angles[0]]
-
     a_vals = np.r_[a_profile, a_profile[0]]
     b_vals = np.r_[b_profile, b_profile[0]]
 
-    fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
-    ax.set_ylim(0, 1)
-    ax.set_yticks([0, .25, .5, .75, 1])
-    ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(labels)
+    fig = go.Figure()
+    
+    fig.add_trace(go.Scatterpolar(
+        r=a_vals,
+        theta=labels,
+        fill='toself',
+        name=a_info["label"],
+        line=dict(width=2),
+        opacity=0.6
+    ))
 
-    ax.plot(angles, a_vals, linewidth=2, marker="o")
-    ax.fill(angles, a_vals, alpha=0.25, label=a_info["label"])
+    fig.add_trace(go.Scatterpolar(
+        r=b_vals,
+        theta=labels,
+        fill='toself',
+        name=b_info["label"],
+        line=dict(width=2),
+        opacity=0.6
+    ))
 
-    ax.plot(angles, b_vals, linewidth=2, marker="o")
-    ax.fill(angles, b_vals, alpha=0.25, label=b_info["label"])
-
-    ax.legend(loc="upper right", bbox_to_anchor=(1.25, 1.1), frameon=False)
-    ax.set_title("Staff / Service profile comparison )", pad=18)
-
-    img = html.Img(src=fig_to_data_uri(fig), style={"width": "100%", "maxWidth": "650px"})
+    fig.update_layout(
+        title="Staff / Service Comparison",
+        polar=dict(
+            radialaxis=dict(
+                visible=True,
+                range=[0, 1],
+                tickvals=[0, 0.25, 0.5, 0.75, 1]
+            )
+        ),
+        showlegend=True,
+    )
 
     info_box = html.Div([
         html.Div([
-            html.B("A: "), html.Span(a_info["label"]), html.Br(),
+            html.B(a_info["label"]), html.Br(),
             html.Span(f"Service: {a_info['service']}"), html.Br(),
-            html.Span(f"Role: {a_info['role']}"),
+            html.Span(f"Role: {a_info['role']}"), html.Br(),
+            html.Span(f"Staff morale: {a_info['avg_staff_morale']}"),html.Br(),
+            html.Span(f"Patient Satisfaction: {a_info['avg_patient_satisfaction']}"),html.Br(),
+            html.Span(f"weeks worked: {a_info['weeks_worked']}"),html.Br(),
         ], style={'width': '48%', 'display': 'inline-block'}),
 
         html.Div([
-            html.B("B: "), html.Span(b_info["label"]), html.Br(),
+            html.B(b_info["label"]), html.Br(),
             html.Span(f"Service: {b_info['service']}"), html.Br(),
-            html.Span(f"Role: {b_info['role']}"),
+            html.Span(f"Role: {b_info['role']}"),html.Br(),
+            html.Span(f"Staff morale: {b_info['avg_staff_morale']}"),
+            html.Span(f"Patient Satisfaction: {b_info['avg_patient_satisfaction']}"),html.Br(),
+            html.Span(f"weeks worked: {b_info['weeks_worked']}"),html.Br(),
         ], style={'width': '48%', 'display': 'inline-block', 'marginLeft': '4%'}),
     ])
 
-    return img, info_box
+   
+
+    return fig, info_box
 
 @app.callback(
     Output("sankey", "figure"),
