@@ -22,7 +22,7 @@ df_HBM_services_weekly = pd.read_csv('../Hospital Beds Management/services_weekl
 
 
 # Compute derived metrics
-services['admits/requests'] = (services['patients_admitted'] / services['patients_request'])*100
+services['admits/requests %'] = (services['patients_admitted'] / services['patients_request'])*100
 # Categorize patient satisfaction and staff morale
 def categorize_satisfaction(score):
     if score <= 20:
