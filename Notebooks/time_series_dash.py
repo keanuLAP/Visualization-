@@ -65,7 +65,7 @@ color_map = {
 }
 
 # Available metrics
-metrics = ['patient_satisfaction', 'staff_morale', 'available_beds', 'admits/requests']
+metrics = ['patient_satisfaction', 'staff_morale', 'available_beds', 'admits/requests %']
 services_list = services['service'].unique().tolist()
 
 event_types = services['event'].unique()
@@ -85,7 +85,7 @@ metric_dash_map = {
     'patient_satisfaction': 'solid',
     'staff_morale': 'dash',
     'available_beds': 'dot',
-    'admits/requests': 'dashdot'
+    'admits/requests %': 'dashdot'
 }
 
 # Group by full path to create links per patient satisfaction category
