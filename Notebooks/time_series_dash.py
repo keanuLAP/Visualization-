@@ -533,12 +533,14 @@ def update_plot(service_selected, metrics_selected, selected_events,selected_wee
             # Add one line per selected metric
 
             # create bar plot for average metrics per service
+            single_metric = len(metrics_selected) == 1
             for metric in metrics_selected:
                 bar.add_trace(go.Bar(
                     x=avg_metrics['service'],
                     y=avg_metrics[metric],
                     name= metric,
-                    marker_color=metric_colors.get(metric, 'gray'),
+                    marker_color=SERVICE_COLORS[s],
+                    width=0.3 if single_metric else None,
                     showlegend = i==1
                 ))
             
