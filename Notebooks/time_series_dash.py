@@ -274,16 +274,7 @@ app.layout = html.Div([
         id="main-tabs",
         value="tab-trends",
         children=[
-                dcc.Tab(
-                label="Staff analysis",
-                value="tab-staff",
-                children=[
-                    html.Div([
-                        html.Div("Patient satifaction overview", className="section-title"),
-                        html.Div("Coming soon…", className="sub"),
-                    ], className="card"),
-                ],
-            ),
+                
             # ---------------- TAB 1 ----------------
             dcc.Tab(
                 label="Trends & relationships",
@@ -292,73 +283,77 @@ app.layout = html.Div([
 
                     # Controls card (SERVICE / METRIC / EVENTS) - ONLY IN TAB 1
                     html.Div([
-                        html.Div([
+                        html.Div("Trends and relationships", className="section-title"),
+                             html.Div([
+                            
+                                html.Div([
+                                    html.Label("Select Service:", className="label"),
+                                    dcc.Dropdown(
+                                        id='service-dropdown',
+                                        options=[{'label': s, 'value': s} for s in services_list],
+                                        value=[services_list[0]],
+                                        multi=True,
+                                        clearable=False,
+                                        className="dropdown",
+                                    )
+                                ], className="col"),
 
-                            html.Div([
-                                html.Label("Select Service:", className="label"),
-                                dcc.Dropdown(
-                                    id='service-dropdown',
-                                    options=[{'label': s, 'value': s} for s in services_list],
-                                    value=[services_list[0]],
-                                    multi=True,
-                                    clearable=False,
-                                    className="dropdown",
-                                )
-                            ], className="col"),
+                                html.Div([
+                                    html.Label("Select Metric(s):", className="label"),
+                                    dcc.Dropdown(
+                                        id='metric-dropdown',
+                                        options=[{'label': m, 'value': m} for m in metrics],
+                                        value=[metrics[0]],
+                                        multi=True,
+                                        clearable=False,
+                                        className="dropdown",
+                                    )
+                                ], className="col"),
 
-                            html.Div([
-                                html.Label("Select Metric(s):", className="label"),
-                                dcc.Dropdown(
-                                    id='metric-dropdown',
-                                    options=[{'label': m, 'value': m} for m in metrics],
-                                    value=[metrics[0]],
-                                    multi=True,
-                                    clearable=False,
-                                    className="dropdown",
-                                )
-                            ], className="col"),
+                                html.Div([
+                                    html.Label("Highlight Event(s):", className="label"),
+                                    dcc.Checklist(
+                                        id="event-checklist",
+                                        options=[{"label": e, "value": e} for e in event_types],
+                                        value=event_types,  
+                                        inline=True,
+                                        style={"marginTop": "6px"}
+                                    )
+                                ], className="col"),
 
-                            html.Div([
-                                html.Label("Highlight Event(s):", className="label"),
-                                dcc.Checklist(
-                                    id="event-checklist",
-                                    options=[{"label": e, "value": e} for e in event_types],
-                                    value=event_types,  # [] if you want off by default
-                                    inline=True,
-                                    style={"marginTop": "6px"}
-                                )
-                            ], className="col"),
-
-                        ], className="row")
-                    ], className="card"),
+                            ], className="row")
+                        ], className="card"),
 
                     # Charts card
                     html.Div([
-                        html.Div("Trends and relationships", className="section-title"),
                         
-                        dcc.Graph(id="bar-chart"),
-                        dcc.Graph(
+                        
+                       html.Div([ dcc.Graph(
                             id='time-series-plot',
                             className="graph",
-                            style={"height": "520px"},
+                            style={"height": "700px"},
                             config={"responsive": True, "displayModeBar": True, "scrollZoom": True},
                             clear_on_unhover=True
-                        ),
+                        ),],className='card line'),
+                       
+                       html.Div([
+                            dcc.Graph(id="bar-chart",
+                                      style={"height": "300px"},),
+                            dcc.Graph(
+                                id='scatterplt',
+                                className="graph",
+                                style={"height": "400px"},
+                                config={"responsive": True, "displayModeBar": True, "scrollZoom": True},
+                                clear_on_unhover=True
+                        ),],className='card barscat'),
+                        
 
-                        dcc.Graph(
-                            id='scatterplt',
-                            className="graph",
-                            style={"height": "520px"},
-                            config={"responsive": True, "displayModeBar": True, "scrollZoom": True},
-                            clear_on_unhover=True
-                        ),
-
-                        dcc.Store(id="selected-weeks")
-                    ], className="card"),
+                       dcc.Store(id="selected-weeks")
+                    ], className="card metrics"),
                 ],
             ),
 
-            # ---------------- TAB 3 ----------------
+            # ---------------- TAB 2 ----------------
             dcc.Tab(
                 label="Staff analysis",
                 value="tab-radar",
@@ -401,10 +396,9 @@ app.layout = html.Div([
                 ],
             ),
 
-            
 
 
-            # ---------------- TAB 4 ----------------
+            # ---------------- TAB 3 ----------------
             dcc.Tab(
                 label="Patient satisfaction flow",
                 value="tab-notes",
@@ -594,10 +588,14 @@ def update_plot(service_selected, metrics_selected, selected_events,selected_wee
                     
         fig.update_layout(
                 title=f"Metrics over time per service",
-                xaxis_title="Week",
-                yaxis_title="Value",
                 legend_title="Metric",
             )
+        fig.update_yaxes(title_text="Value")
+        fig.update_xaxes(
+            title_text="Week",
+            row=len(service_selected),
+            col=1
+        ) 
         bar.update_layout(
                 barmode='group',
                 title=f" Average metrics per service",
@@ -716,8 +714,8 @@ def update_radar(a_val, b_val):
             html.B(a_info["label"]), html.Br(),
             html.Span(f"Service: {a_info['service']}"), html.Br(),
             html.Span(f"Role: {a_info['role']}"), html.Br(),
-            html.Span(f"Staff morale: {a_info['avg_staff_morale']}"),html.Br(),
-            html.Span(f"Patient Satisfaction: {a_info['avg_patient_satisfaction']}"),html.Br(),
+            html.Span(f"Staff morale: {round(a_info['avg_staff_morale'],2)}"),html.Br(),
+            html.Span(f"Patient Satisfaction: {round(a_info['avg_patient_satisfaction'],2)}"),html.Br(),
             html.Span(f"weeks worked: {a_info['weeks_worked']}"),html.Br(),
         ], style={'width': '48%', 'display': 'inline-block'}),
 
@@ -725,8 +723,8 @@ def update_radar(a_val, b_val):
             html.B(b_info["label"]), html.Br(),
             html.Span(f"Service: {b_info['service']}"), html.Br(),
             html.Span(f"Role: {b_info['role']}"),html.Br(),
-            html.Span(f"Staff morale: {b_info['avg_staff_morale']}"),
-            html.Span(f"Patient Satisfaction: {b_info['avg_patient_satisfaction']}"),html.Br(),
+            html.Span(f"Staff morale: {round(b_info['avg_staff_morale'],2)}"),html.Br(),
+            html.Span(f"Patient Satisfaction: {round(b_info['avg_patient_satisfaction'],2)}"),html.Br(),
             html.Span(f"weeks worked: {b_info['weeks_worked']}"),html.Br(),
         ], style={'width': '48%', 'display': 'inline-block', 'marginLeft': '4%'}),
     ])
