@@ -626,7 +626,7 @@ def update_plot(service_selected, metrics_selected, selected_events,selected_wee
 
         # Sync and highlight the selected data
         selectedpointsRatio = [i for i, w in enumerate(scatter_data['week']) if selected_weeks and w in selected_weeks]
-        if selectedpointsRatio is not None:
+        if selectedpointsRatio is not None and len(selectedpointsRatio)!=0:
          for trace in fig_scatter.data:
             trace.selectedpoints = selectedpointsRatio
             trace.selected = dict(marker=dict(opacity=1, size=14))
