@@ -80,7 +80,7 @@ SERVICE_COLORS = {s: palette[i % len(palette)] for i, s in enumerate(services_li
 
 SERVICE_COLORS_Selected = {m: pc.qualitative.Set1[i % len(pc.qualitative.Set1)] for i, m in enumerate(metrics)}
 
-# Change wheter line is solid dashe... per mertric
+# Change wheter line is solid or dashed, what color it has and what motif... per mertric
 metric_dash_map = {
         'patient_satisfaction': 'solid',
         'staff_morale': 'dash',
@@ -93,6 +93,12 @@ metric_colors = {
         'available_beds': 'orange',
         'admits/requests %': 'red'
         }
+metric_pattern = {
+        'patient_satisfaction': '/',
+        'staff_morale': 'x',
+        'available_beds': '.',
+        'admits/requests %': '+'
+}
 
 # Group by full path to create links per patient satisfaction category
 grouped = services.groupby(['patient_sat_cat', 'service', 'event', 'staff_morale_cat']).size().reset_index(name='count')
@@ -529,8 +535,6 @@ def update_plot(service_selected, metrics_selected, selected_events,selected_wee
         
             p = positions[i]
             i+=1
-            
-            # Add one line per selected metric
 
             # create bar plot for average metrics per service
             single_metric = len(metrics_selected) == 1
@@ -539,12 +543,17 @@ def update_plot(service_selected, metrics_selected, selected_events,selected_wee
                     x=avg_metrics['service'],
                     y=avg_metrics[metric],
                     name= metric,
-                    marker_color=SERVICE_COLORS[s],
+                    marker=dict(
+                        color=SERVICE_COLORS[s],  
+                        pattern=dict(
+                            shape=metric_pattern.get(metric, "")
+                        )
+                    ),
                     width=0.3 if single_metric else None,
-                    showlegend = i==1
+                    showlegend = True
                 ))
             
-               
+               # Add one line per selected metric
                 fig.add_trace(go.Scatter(
                     x=df_service['week'],
                     y=df_service[metric],
