@@ -20,6 +20,9 @@ df_HBM_staff           = pd.read_csv('../Hospital Beds Management/staff.csv', de
 df_HBM_staff_schedule  = pd.read_csv('../Hospital Beds Management/staff_schedule.csv', delimiter=',', low_memory=False)
 df_HBM_services_weekly = pd.read_csv('../Hospital Beds Management/services_weekly.csv', delimiter=',', low_memory=False)
 
+# Available metrics
+metrics = ['patient_satisfaction', 'staff_morale', 'available_beds', 'admits/requests %']
+services_list = services['service'].unique().tolist()
 
 # Compute derived metrics
 services['admits/requests %'] = (services['patients_admitted'] / services['patients_request'])*100
@@ -44,6 +47,7 @@ patient_sat_cats = ['Very Low', 'Low', 'Medium', 'High', 'Very High']
 depts = services['service'].unique().tolist()
 events = services['event'].unique().tolist()
 staff_morale_cats = patient_sat_cats
+filter_options= services['event'].unique().tolist()+['none']+services_list+patient_sat_cats
 
 # Node labels with explicit prefixes
 patient_sat_labels = [f'Patient Satisfaction: {cat}' for cat in patient_sat_cats]
@@ -64,9 +68,6 @@ color_map = {
     'Very High': 'darkgreen'
 }
 
-# Available metrics
-metrics = ['patient_satisfaction', 'staff_morale', 'available_beds', 'admits/requests %']
-services_list = services['service'].unique().tolist()
 
 event_types = services['event'].unique()
 event_types = [e for e in event_types if e != 'none']
@@ -411,7 +412,7 @@ app.layout = html.Div([
                                 html.Label("Select Category:", className="label"),
                                 dcc.Dropdown(
                                     id='sankey-category-dropdown',
-                                    options=[{'label': 'All', 'value': 'All'}] + [{'label': cat, 'value': cat} for cat in patient_sat_cats],
+                                    options=[{'label': 'All', 'value': 'All'}] + [{'label': cat, 'value': cat} for cat in filter_options],
                                     value='All',
                                     clearable=False,
                                     className="dropdown",
@@ -585,7 +586,8 @@ def update_plot(service_selected, metrics_selected, selected_events,selected_wee
                         col=p[1],
 
                     )
-                    
+        
+        # update figures
         fig.update_layout(
                 title=f"Metrics over time per service",
                 legend_title="Metric",
@@ -646,6 +648,8 @@ def update_plot(service_selected, metrics_selected, selected_events,selected_wee
 
 
 def update_radar(a_val, b_val):
+
+    # Get data per staff member or service
     def get_profile_and_info(val):
         if val and val.startswith("staff:"):
             staff_id = val.split(":", 1)[1]
@@ -679,6 +683,7 @@ def update_radar(a_val, b_val):
 
     fig = go.Figure()
     
+    # Add staff member or service A to radar plot
     fig.add_trace(go.Scatterpolar(
         r=a_vals,
         theta=labels,
@@ -688,6 +693,7 @@ def update_radar(a_val, b_val):
         opacity=0.6
     ))
 
+    # Add staff member or service B to plot
     fig.add_trace(go.Scatterpolar(
         r=b_vals,
         theta=labels,
@@ -709,6 +715,7 @@ def update_radar(a_val, b_val):
         showlegend=True,
     )
 
+    # Show values more precisely under the radar plot
     info_box = html.Div([
         html.Div([
             html.B(a_info["label"]), html.Br(),
@@ -744,12 +751,36 @@ def update_sankey(opacity, selected_cat, filter_enabled):
     
     if is_filter_mode and selected_cat != 'All':
         # FILTER MODE: Show only selected category
-        filtered_grouped = grouped[grouped['patient_sat_cat'] == selected_cat]
-        
-        # Build filtered node labels and indices
-        filtered_sat_cats = [selected_cat]
-        filtered_depts = filtered_grouped['service'].unique().tolist()
-        filtered_events = filtered_grouped['event'].unique().tolist()
+        if selected_cat in patient_sat_cats:
+            filtered_grouped = grouped[grouped['patient_sat_cat'] == selected_cat]
+        elif selected_cat in services_list:
+            filtered_grouped = grouped[grouped['service'] == selected_cat]
+        elif selected_cat in event_types or selected_cat == 'none':
+            if selected_cat == 'none':
+                filtered_grouped = grouped[grouped['event'] == 'none']
+            else:
+                filtered_grouped = grouped[grouped['event'] == selected_cat]
+    
+        # satisfaction 
+        if selected_cat in patient_sat_cats:
+            filtered_sat_cats = [selected_cat]
+        else:
+            filtered_sat_cats = filtered_grouped['patient_sat_cat'].unique().tolist()
+
+        # services
+        if selected_cat in services_list:
+            filtered_depts = [selected_cat]
+        else:
+            filtered_depts = filtered_grouped['service'].unique().tolist()
+
+        # events
+        if selected_cat in event_types:
+            filtered_events = [selected_cat]
+        else:
+            filtered_events = filtered_grouped['event'].unique().tolist()
+
+        # Morale always comes from filtered data
+        filtered_morale_cats = filtered_grouped['staff_morale_cat'].unique().tolist()
         filtered_morale_cats = filtered_grouped['staff_morale_cat'].unique().tolist()
         
         filtered_patient_sat_labels = [f'Patient Satisfaction: {cat}' for cat in filtered_sat_cats]
@@ -819,10 +850,19 @@ def update_sankey(opacity, selected_cat, filter_enabled):
             color_event_to_morale = event_color_map.get(event, 'gray')
             
             # Gray out other categories if one is selected
-            if selected_cat != 'All' and sat != selected_cat:
-                color_sat_to_dept = 'lightgray'
-                color_dept_to_event = 'lightgray'
-                color_event_to_morale = 'lightgray'
+            if selected_cat != 'All':
+                if selected_cat in patient_sat_cats and sat != selected_cat:
+                    color_sat_to_dept = 'lightgray'
+                    color_dept_to_event = 'lightgray'
+                    color_event_to_morale = 'lightgray'
+                elif selected_cat in services_list and dept != selected_cat:
+                    color_sat_to_dept = 'lightgray'
+                    color_dept_to_event = 'lightgray'
+                    color_event_to_morale = 'lightgray'
+                elif (selected_cat in event_types or selected_cat == 'none') and (event != selected_cat):
+                    color_sat_to_dept = 'lightgray'
+                    color_dept_to_event = 'lightgray'
+                    color_event_to_morale = 'lightgray'
             
             sat_idx = patient_sat_cats.index(sat)
             dept_idx = num_sat + depts.index(dept)
@@ -866,5 +906,4 @@ def update_sankey(opacity, selected_cat, filter_enabled):
 if __name__ == '__main__':
     webbrowser.open("http://127.0.0.1:8050/")
     app.run(debug=True, dev_tools_ui=True, dev_tools_props_check=True)
-
 
