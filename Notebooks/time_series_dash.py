@@ -6,7 +6,6 @@ import webbrowser
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
-import io, base64
 import plotly.io as pio
 pio.templates.default = "plotly"
 import matplotlib.pyplot as plt
@@ -26,6 +25,7 @@ services_list = services['service'].unique().tolist()
 
 # Compute derived metrics
 services['admits/requests %'] = (services['patients_admitted'] / services['patients_request'])*100
+
 # Categorize patient satisfaction and staff morale
 def categorize_satisfaction(score):
     if score <= 20:
@@ -47,6 +47,8 @@ patient_sat_cats = ['Very Low', 'Low', 'Medium', 'High', 'Very High']
 depts = services['service'].unique().tolist()
 events = services['event'].unique().tolist()
 staff_morale_cats = patient_sat_cats
+
+# Filter options for the sankey diagram
 filter_options= services['event'].unique().tolist()+['none']+services_list+patient_sat_cats
 
 # Node labels with explicit prefixes
@@ -68,7 +70,7 @@ color_map = {
     'Very High': 'darkgreen'
 }
 
-
+# Get events and a unique color for each event
 event_types = services['event'].unique()
 event_types = [e for e in event_types if e != 'none']
 event_colors = px.colors.qualitative.Pastel[:len(event_types)]
@@ -76,7 +78,7 @@ event_color_map = dict(zip(event_types, event_colors))
 
 palette = pc.qualitative.Set2
 
-# keep the colors the same for each service and when they are selected
+# Keep the colors the same for each service and when they are selected
 SERVICE_COLORS = {s: palette[i % len(palette)] for i, s in enumerate(services_list)}
 
 SERVICE_COLORS_Selected = {m: pc.qualitative.Set1[i % len(pc.qualitative.Set1)] for i, m in enumerate(metrics)}
@@ -104,7 +106,7 @@ metric_pattern = {
 # Group by full path to create links per patient satisfaction category
 grouped = services.groupby(['patient_sat_cat', 'service', 'event', 'staff_morale_cat']).size().reset_index(name='count')
 
-# Links
+# Links for sankey diagram
 links = []
 for _, row in grouped.iterrows():
     sat = row['patient_sat_cat']
@@ -126,6 +128,7 @@ for _, row in grouped.iterrows():
 # Node colors: patient satisfaction categories, departments, events with their respective colors, others neutral
 node_colors = []
 for label in node_labels:
+
     # Extract the category name without prefix
     if label.startswith('Patient Satisfaction: '):
         cat_name = label.replace('Patient Satisfaction: ', '')
@@ -159,11 +162,13 @@ def add_opacity(color, opacity):
     if color in color_map_rgb:
         return f'rgba({color_map_rgb[color]},{opacity})'
     elif color.startswith('rgba'):
+
         # If already rgba, update alpha
         parts = color.strip('rgba()').split(',')
         parts[-1] = str(opacity)
         return f'rgba({",".join(parts)})'
     elif color.startswith('rgb'):
+        
         # Convert rgb to rgba
         rgb_part = color.strip('rgb()')
         return f'rgba({rgb_part},{opacity})'
@@ -190,7 +195,7 @@ fig_sankey = go.Figure(go.Sankey(
 ))
 fig_sankey.update_layout(title_text="Patient Satisfaction Flow", font_size=10)
 
-## calculate staff to patient ratio
+# Calculate staff to patient ratio
 weeks = df_HBM_staff_schedule['week'].unique().tolist()
 coverage = df_HBM_staff_schedule.groupby("week")['present'].sum().reset_index(name="staff_coverage")
 df_HBM_staff['#weeks worked'] = df_HBM_staff_schedule.groupby('staff_id')['present'].transform('sum')
@@ -213,11 +218,12 @@ merged['staff_to_patient_ratio'] = (
 
 df_HBM_staff['#weeks worked'] = df_HBM_staff_schedule.groupby('staff_id')['present'].transform('sum')
 
-## values for radar plot
+# Values and attributes for radar plot
 df_staff_serv = df_HBM_staff_schedule.merge(
     df_HBM_services_weekly,
     on=['service', 'week'],
     how='left')
+
 radar_cols = ['avg_patient_satisfaction', 'avg_staff_morale', '#weeks worked']
 present_weeks = df_staff_serv[df_staff_serv['present'] == 1]
 avg_sat_each_staff = (
@@ -235,7 +241,8 @@ avg_mor_each_staff = (
     .reset_index(name='avg_staff_morale')
 )
 df_HBM_staff = df_HBM_staff.merge(avg_mor_each_staff, on='staff_name',how='left')
-# min–max normalize each metric to [0, 1]
+
+# Min–max normalize each metric to [0, 1]
 df_norm = df_HBM_staff.copy()
 for m in radar_cols:
     col = df_norm[m]
@@ -243,7 +250,6 @@ for m in radar_cols:
     df_norm[m + '_norm'] = (col - m_min) / (m_max - m_min)
 
 # staff options for dropdown
-
 staff_options = []
 
 for _, r in df_norm[['staff_id', 'staff_name', 'service', 'role']].drop_duplicates('staff_id').iterrows():
@@ -251,6 +257,7 @@ for _, r in df_norm[['staff_id', 'staff_name', 'service', 'role']].drop_duplicat
     value = f"staff:{r['staff_id']}"
     staff_options.append({"label": label, "value": value})
 staff_options = sorted(staff_options, key=lambda x: x["label"])
+
 # average options: value encodes type + service
 avg_options = [{"label": f"AVG — {s}", "value": f"avg:{s}"} for s in services_list]
 
@@ -259,197 +266,196 @@ entity_options = avg_options + staff_options
 
 radar_norm_cols = [c + "_norm" for c in radar_cols]
 
-
 # Dash app
 app = Dash(__name__)
 
 app.layout = html.Div([
-    html.Div([  # page
+    html.Div([  
 
-    html.Div([
-        html.H1("Hospital Metrics Over Time", className="h1"),
-        html.Div("Hover for details • Select to compare • Scroll to zoom", className="sub"),
-    ], className="header"),
+        # Title tool
+        html.Div([
+            html.H1("Hospital Metrics Over Time", className="h1"),
+            html.Div("Hover for details • Select to compare • Scroll to zoom", className="sub"),
+        ], className="header"),
 
-    dcc.Tabs(
-        id="main-tabs",
-        value="tab-trends",
-        children=[
-                
-            # ---------------- TAB 1 ----------------
-            dcc.Tab(
-                label="Trends & relationships",
-                value="tab-trends",
-                children=[
+        dcc.Tabs(
+            id="main-tabs",
+            value="tab-trends",
+            children=[
+                    
+                # Tab for time-series, bar chart and scatterplot
+                dcc.Tab(
+                    label="Trends & relationships",
+                    value="tab-trends",
+                    children=[
 
-                    # Controls card (SERVICE / METRIC / EVENTS) - ONLY IN TAB 1
-                    html.Div([
-                        html.Div("Trends and relationships", className="section-title"),
-                             html.Div([
+                        html.Div([
+                            html.Div("Trends and relationships", className="section-title"),
+                                html.Div([
+                                    
+                                    # Selection of services
+                                    html.Div([
+                                        html.Label("Select Service:", className="label"),
+                                        dcc.Dropdown(
+                                            id='service-dropdown',
+                                            options=[{'label': s, 'value': s} for s in services_list],
+                                            value=[services_list[0]],
+                                            multi=True,
+                                            clearable=False,
+                                            className="dropdown",
+                                        )
+                                    ], className="col"),
+
+                                    # Selection of metrics
+                                    html.Div([
+                                        html.Label("Select Metric(s):", className="label"),
+                                        dcc.Dropdown(
+                                            id='metric-dropdown',
+                                            options=[{'label': m, 'value': m} for m in metrics],
+                                            value=[metrics[0]],
+                                            multi=True,
+                                            clearable=False,
+                                            className="dropdown",
+                                        )
+                                    ], className="col"),
+
+                                    # Check box to show events
+                                    html.Div([
+                                        html.Label("Highlight Event(s):", className="label"),
+                                        dcc.Checklist(
+                                            id="event-checklist",
+                                            options=[{"label": e, "value": e} for e in event_types],
+                                            value=event_types,  
+                                            inline=True,
+                                            style={"marginTop": "6px"}
+                                        )
+                                    ], className="col"),
+
+                                ], className="row")
+                            ], className="card"),
+
+                        html.Div([  
+                            html.Div([ dcc.Graph(
+                                    id='time-series-plot',
+                                    className="graph",
+                                    style={"height": "700px"},
+                                    config={"responsive": True, "displayModeBar": True, "scrollZoom": True},
+                                    clear_on_unhover=True
+                                ),],className='card line'),
                             
+                            html.Div([
+                                    dcc.Graph(id="bar-chart",
+                                            style={"height": "300px"},),
+                                    dcc.Graph(
+                                        id='scatterplt',
+                                        className="graph",
+                                        style={"height": "400px"},
+                                        config={"responsive": True, "displayModeBar": True, "scrollZoom": True},
+                                        clear_on_unhover=True
+                                ),],className='card barscat'),
+                                
+                            # Store the selected weeks to link the scatterplot and time-series
+                            dcc.Store(id="selected-weeks")
+                        ], className="card metrics"),
+                    ],
+                ),
+
+                # Tab 2 radar plot
+                dcc.Tab(
+                    label="Staff analysis",
+                    value="tab-radar",
+                    children=[
+
+                        html.Div([
+                            html.Div("Staff comparison", className="section-title"),
+                            html.Div([
+                                
+                                # Select service/staff member A
                                 html.Div([
-                                    html.Label("Select Service:", className="label"),
+                                    html.Label("Select A:", className="label"),
                                     dcc.Dropdown(
-                                        id='service-dropdown',
-                                        options=[{'label': s, 'value': s} for s in services_list],
-                                        value=[services_list[0]],
-                                        multi=True,
+                                        id='radar-a',
+                                        options=entity_options,
+                                        value=entity_options[0]['value'],
+                                        searchable=True,
                                         clearable=False,
                                         className="dropdown",
                                     )
                                 ], className="col"),
 
+                                # Select service/staff member B
                                 html.Div([
-                                    html.Label("Select Metric(s):", className="label"),
+                                    html.Label("Select B:", className="label"),
                                     dcc.Dropdown(
-                                        id='metric-dropdown',
-                                        options=[{'label': m, 'value': m} for m in metrics],
-                                        value=[metrics[0]],
-                                        multi=True,
+                                        id='radar-b',
+                                        options=entity_options,
+                                        value=entity_options[1]['value'] if len(entity_options) > 1 else entity_options[0]['value'],
+                                        searchable=True,
                                         clearable=False,
                                         className="dropdown",
                                     )
                                 ], className="col"),
 
+                            ], className="row"),
+                        ], className="card"),
+
+                        dcc.Graph(id="radar-graph"),
+                        html.Div(id="radar-info", className="card"),
+                    ],
+                ),
+
+                # Tab 3 Sankey diagram
+                dcc.Tab(
+                    label="Patient satisfaction flow",
+                    value="tab-notes",
+                    children=[
+                        html.Div([
+                            html.Div("Patient Satisfaction Flow", className="section-title"),
+                            
+                            # Filter selection
+                            html.Div([
                                 html.Div([
-                                    html.Label("Highlight Event(s):", className="label"),
+                                    html.Label("Select Category:", className="label"),
+                                    dcc.Dropdown(
+                                        id='sankey-category-dropdown',
+                                        options=[{'label': 'All', 'value': 'All'}] + [{'label': cat, 'value': cat} for cat in filter_options],
+                                        value='All',
+                                        clearable=False,
+                                        className="dropdown",
+                                    )
+                                ], className="col"),
+                                
+                                html.Div([
+                                    html.Label("Filter Mode:", className="label"),
                                     dcc.Checklist(
-                                        id="event-checklist",
-                                        options=[{"label": e, "value": e} for e in event_types],
-                                        value=event_types,  
+                                        id='sankey-filter-toggle',
+                                        options=[{'label': ' Show only this category', 'value': 'filter'}],
+                                        value=[],
                                         inline=True,
                                         style={"marginTop": "6px"}
                                     )
                                 ], className="col"),
-
-                            ], className="row")
-                        ], className="card"),
-
-                    # Charts card
-                    html.Div([
-                        
-                        
-                       html.Div([ dcc.Graph(
-                            id='time-series-plot',
-                            className="graph",
-                            style={"height": "700px"},
-                            config={"responsive": True, "displayModeBar": True, "scrollZoom": True},
-                            clear_on_unhover=True
-                        ),],className='card line'),
-                       
-                       html.Div([
-                            dcc.Graph(id="bar-chart",
-                                      style={"height": "300px"},),
-                            dcc.Graph(
-                                id='scatterplt',
-                                className="graph",
-                                style={"height": "400px"},
-                                config={"responsive": True, "displayModeBar": True, "scrollZoom": True},
-                                clear_on_unhover=True
-                        ),],className='card barscat'),
-                        
-
-                       dcc.Store(id="selected-weeks")
-                    ], className="card metrics"),
-                ],
-            ),
-
-            # ---------------- TAB 2 ----------------
-            dcc.Tab(
-                label="Staff analysis",
-                value="tab-radar",
-                children=[
-
-                    # Radar controls - ONLY IN TAB 2
-                    html.Div([
-                        html.Div("Staff comparison", className="section-title"),
-                        html.Div([
-
-                            html.Div([
-                                html.Label("Select A:", className="label"),
-                                dcc.Dropdown(
-                                    id='radar-a',
-                                    options=entity_options,
-                                    value=entity_options[0]['value'],
-                                    searchable=True,
-                                    clearable=False,
-                                    className="dropdown",
-                                )
-                            ], className="col"),
-
-                            html.Div([
-                                html.Label("Select B:", className="label"),
-                                dcc.Dropdown(
-                                    id='radar-b',
-                                    options=entity_options,
-                                    value=entity_options[1]['value'] if len(entity_options) > 1 else entity_options[0]['value'],
-                                    searchable=True,
-                                    clearable=False,
-                                    className="dropdown",
-                                )
-                            ], className="col"),
-
-                        ], className="row"),
-                    ], className="card"),
-
-                    dcc.Graph(id="radar-graph"),
-                    html.Div(id="radar-info", className="card"),
-                ],
-            ),
-
-
-
-            # ---------------- TAB 3 ----------------
-            dcc.Tab(
-                label="Patient satisfaction flow",
-                value="tab-notes",
-                children=[
-                    html.Div([
-                        html.Div("Patient Satisfaction Flow", className="section-title"),
-                        
-                        html.Div([
-                            html.Div([
-                                html.Label("Select Category:", className="label"),
-                                dcc.Dropdown(
-                                    id='sankey-category-dropdown',
-                                    options=[{'label': 'All', 'value': 'All'}] + [{'label': cat, 'value': cat} for cat in filter_options],
-                                    value='All',
-                                    clearable=False,
-                                    className="dropdown",
-                                )
-                            ], className="col"),
+                            ], className="row"),
                             
-                            html.Div([
-                                html.Label("Filter Mode:", className="label"),
-                                dcc.Checklist(
-                                    id='sankey-filter-toggle',
-                                    options=[{'label': ' Show only this category', 'value': 'filter'}],
-                                    value=[],
-                                    inline=True,
-                                    style={"marginTop": "6px"}
-                                )
-                            ], className="col"),
-                        ], className="row"),
-                        
-                        html.P("Link Opacity", className="label"),
-                        dcc.Slider(id='sankey-opacity', min=0, max=1, value=0.5, step=0.1),
-                        
-                        dcc.Graph(id='sankey', className="graph", style={"height": "600px"}),
-                    ], className="card"),
-                ],
+                            html.P("Link Opacity", className="label"),
+                            dcc.Slider(id='sankey-opacity', min=0, max=1, value=0.5, step=0.1),
+                            
+                            dcc.Graph(id='sankey', className="graph", style={"height": "600px"}),
+                        ], className="card"),
+                    ],
             ),
         ],
     ),
 
 ], className="page")])
 
+# Store selection to share selected points across plots
 @app.callback(
     Output("selected-weeks", "data"),
     Input("time-series-plot", "selectedData"),
     Input("scatterplt", "selectedData"),
     prevent_initial_call=True,
 )
-
 def update_selected_weeks(selectedData1,selectedData2):
 
     # If nothing is selected there is nothing to update
@@ -476,7 +482,6 @@ def update_selected_weeks(selectedData1,selectedData2):
     State('time-series-plot', 'figure'),  
     State('scatterplt', 'figure')
 )
-
 def update_plot(service_selected, metrics_selected, selected_events,selected_weeks,c_fig,c_scat):
         
     
@@ -489,6 +494,7 @@ def update_plot(service_selected, metrics_selected, selected_events,selected_wee
         fig = go.Figure()
         fig_scatter = go.Figure() 
         bar = go.Figure()
+
         # If no services or metric selected ask for atleast one
         if len(service_selected)==0 or len(metrics_selected)==0:
             fig.update_layout(
@@ -531,7 +537,7 @@ def update_plot(service_selected, metrics_selected, selected_events,selected_wee
             p = positions[i]
             i+=1
 
-            # create bar plot for average metrics per service
+            # Create bar plot for average metrics per service
             single_metric = len(metrics_selected) == 1
             for metric in metrics_selected:
                 bar.add_trace(go.Bar(
@@ -548,7 +554,7 @@ def update_plot(service_selected, metrics_selected, selected_events,selected_wee
                     showlegend = True
                 ))
             
-               # Add one line per selected metric
+               # Add one line per selected metric for time-series
                 fig.add_trace(go.Scatter(
                     x=df_service['week'],
                     y=df_service[metric],
@@ -563,9 +569,7 @@ def update_plot(service_selected, metrics_selected, selected_events,selected_wee
                         ),
                     unselected=dict(
                         marker=dict(opacity=0.15)
-                        ),
-                        
-                    
+                        ), 
                 ),row=p[0],
                 col=p[1])
 
@@ -584,7 +588,6 @@ def update_plot(service_selected, metrics_selected, selected_events,selected_wee
                         line_width=0,
                         row=p[0],
                         col=p[1],
-
                     )
         
         # update figures
@@ -626,7 +629,7 @@ def update_plot(service_selected, metrics_selected, selected_events,selected_wee
             title=f'Staffing vs Patient Satisfaction'
         )
 
-        # Sync and highlight the selected data
+        # Sync and highlight the selected data for the scatter plot
         selectedpointsRatio = [i for i, w in enumerate(scatter_data['week']) if selected_weeks and w in selected_weeks]
         if selectedpointsRatio is not None and len(selectedpointsRatio)!=0:
          for trace in fig_scatter.data:
@@ -645,12 +648,12 @@ def update_plot(service_selected, metrics_selected, selected_events,selected_wee
     Output('radar-info', 'children'),
     Input('radar-a', 'value'),
     Input('radar-b', 'value'),)
-
-
 def update_radar(a_val, b_val):
 
     # Get data per staff member or service
     def get_profile_and_info(val):
+
+        # Get values for individual staff mebers
         if val and val.startswith("staff:"):
             staff_id = val.split(":", 1)[1]
             row = df_norm[df_norm['staff_id'].astype(str) == str(staff_id)].iloc[0]
@@ -660,6 +663,7 @@ def update_radar(a_val, b_val):
                 "weeks_worked": row["#weeks worked"]
             }
 
+        # Get avg values for services
         if val and val.startswith("avg:"):
             service = val.split(":", 1)[1]
             rows = df_norm[df_norm['service'] == service]
@@ -761,19 +765,19 @@ def update_sankey(opacity, selected_cat, filter_enabled):
             else:
                 filtered_grouped = grouped[grouped['event'] == selected_cat]
     
-        # satisfaction 
+        # Satisfaction 
         if selected_cat in patient_sat_cats:
             filtered_sat_cats = [selected_cat]
         else:
             filtered_sat_cats = filtered_grouped['patient_sat_cat'].unique().tolist()
 
-        # services
+        # Services
         if selected_cat in services_list:
             filtered_depts = [selected_cat]
         else:
             filtered_depts = filtered_grouped['service'].unique().tolist()
 
-        # events
+        # Events
         if selected_cat in event_types:
             filtered_events = [selected_cat]
         else:
@@ -794,6 +798,7 @@ def update_sankey(opacity, selected_cat, filter_enabled):
         # Build filtered node colors
         filtered_node_colors = []
         for label in filtered_node_labels:
+
             # Extract the category name without prefix
             if label.startswith('Patient Satisfaction: '):
                 cat_name = label.replace('Patient Satisfaction: ', '')
@@ -808,6 +813,7 @@ def update_sankey(opacity, selected_cat, filter_enabled):
             else:
                 filtered_node_colors.append('lightgray')
         
+        # Create links 
         links = []
         for _, row in filtered_grouped.iterrows():
             sat = row['patient_sat_cat']
@@ -883,6 +889,7 @@ def update_sankey(opacity, selected_cat, filter_enabled):
     link_customdata = [l['sat'] for l in links]
     link_colors_opacity = [add_opacity(c, opacity) for c in link_colors]
     
+    # Create Sankey diagram
     fig = go.Figure(go.Sankey(
         node=dict(
             pad=15,
